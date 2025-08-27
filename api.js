@@ -19,6 +19,22 @@ console.log("=====================");
 
 app.use("/*", cors());
 
+app.get("/api/courses", async (c) => {
+  const apiKey = c.req.header("x-api-key");
+
+  if (!apiKey || apiKey !== Bun.env.GET_API_KEY) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const [courses] = await pool.execute("SELECT * FROM courses LIMIT 10");
+    return c.json({ data: courses });
+  } catch (error) {
+    console.error("Error in /api/courses:", error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+}); 
+
 app.get("/api/query", async (c) => {
   const apiKey = c.req.header("x-api-key");
 
@@ -54,11 +70,20 @@ app.get("/api/query", async (c) => {
       literature,
       min_cumulative_gpa,
       min_most_recent_gpa,
+      median_grade,
+      min_a_percent,
       // New RMP section-level filters
       min_section_avg_rating,
       min_section_avg_difficulty,
       min_section_total_ratings,
       min_section_avg_would_take_again,
+      // New meeting time filters
+      meeting_days,
+      start_time_after,
+      start_time_before,
+      end_time_after,
+      end_time_before,
+      building_name,
       page = 1
     } = c.req.query();
 
@@ -66,6 +91,7 @@ app.get("/api/query", async (c) => {
     let sectionFilters = [];
     let courseFilters = [];
     let rmpSectionFilters = []; // New: for RMP section-level filters
+    let meetingFilters = []; // New: for meeting-related filters
     let filterParams = [];
 
     if (status) {
@@ -90,6 +116,16 @@ app.get("/api/query", async (c) => {
     if (min_available_seats) {
       sectionFilters.push("sections.available_seats >= ?");
       filterParams.push(min_available_seats);
+    }
+
+    if (min_a_percent) {
+      courseFilters.push("madgrades_course_grades.a_percentage >= ?");
+      filterParams.push(min_a_percent);
+    }
+
+    if (median_grade) {
+      courseFilters.push("madgrades_course_grades.median_grade = ?");
+      filterParams.push(median_grade);
     }
 
     // Course-level filters
@@ -163,7 +199,31 @@ app.get("/api/query", async (c) => {
       filterParams.push(parseFloat(min_section_avg_would_take_again));
     }
 
-    
+    // New meeting time filters
+    if (meeting_days) {
+      meetingFilters.push("section_meetings.meeting_days LIKE ?");
+      filterParams.push(`%${meeting_days}%`);
+    }
+    if (start_time_after) {
+      meetingFilters.push("STR_TO_DATE(section_meetings.start_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')");
+      filterParams.push(start_time_after);
+    }
+    if (start_time_before) {
+      meetingFilters.push("STR_TO_DATE(section_meetings.start_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')");
+      filterParams.push(start_time_before);
+    }
+    if (end_time_after) {
+      meetingFilters.push("STR_TO_DATE(section_meetings.end_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')");
+      filterParams.push(end_time_after);
+    }
+    if (end_time_before) {
+      meetingFilters.push("STR_TO_DATE(section_meetings.end_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')");
+      filterParams.push(end_time_before);
+    }
+    if (building_name) {
+      meetingFilters.push("section_meetings.building_name LIKE ?");
+      filterParams.push(`%${building_name}%`);
+    }
 
     if (search_param) {
       courseFilters.push("(courses.course_designation LIKE ? OR courses.full_course_designation LIKE ? OR si.instructor_name LIKE ?)");
@@ -173,15 +233,17 @@ app.get("/api/query", async (c) => {
 
     const offset = (page - 1) * limit;
 
-    let allFilters = [...sectionFilters, ...courseFilters, ...rmpSectionFilters];
+    let allFilters = [...sectionFilters, ...courseFilters, ...rmpSectionFilters, ...meetingFilters];
     
     console.log("All filters:", allFilters);
     console.log("Filter params:", filterParams);
 
     const limitValue = parseInt(limit) || 10;
 
+    // Determine if we need to join section_meetings table
+    const needMeetingJoin = meetingFilters.length > 0;
 
-      let totalCountSql = `
+    let totalCountSql = `
      WITH section_rmp_avg AS (
           SELECT 
             sections.section_id,
@@ -233,6 +295,7 @@ app.get("/api/query", async (c) => {
     JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
     LEFT JOIN section_instructors si ON sections.section_id = si.section_id
     ${rmpSectionFilters.length > 0 ? 'JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id' : ''}
+    ${needMeetingJoin ? 'LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id' : ''}
     ${allFilters.length > 0 ? `WHERE ${allFilters.join(' AND ')}` : ''}
   `;
 
@@ -242,9 +305,6 @@ app.get("/api/query", async (c) => {
 
     // Build the query with RMP section calculations
     let distinctCoursesSql, queryParams;
-  
-
-    
 
     if (allFilters.length > 0) {
       // Create a CTE (Common Table Expression) to calculate section-level RMP averages
@@ -300,6 +360,7 @@ app.get("/api/query", async (c) => {
         JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
         LEFT JOIN section_instructors si ON sections.section_id = si.section_id
         ${rmpSectionFilters.length > 0 ? 'JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id' : ''}
+        ${needMeetingJoin ? 'LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id' : ''}
         ${allFilters.length > 0 ? `WHERE ${allFilters.join(' AND ')}` : ''}
         LIMIT ${limitValue} OFFSET ${offset}
       `;
@@ -334,13 +395,21 @@ app.get("/api/query", async (c) => {
     const coursePlaceholders = courseIdList.map(() => '?').join(',');
 
     const coursesSql = `
-      SELECT course_id, subject_code, course_designation, full_course_designation, 
+      SELECT course_id, course_title, course_designation,  enrollment_prerequisites, letters_and_science_credits, course_description, subject_code, course_designation, full_course_designation, 
              minimum_credits, maximum_credits, ethnic_studies, social_science, 
              humanities, biological_science, physical_science, natural_science, 
              literature, level, 
-               CAST(madgrades_course_grades.cumulative_gpa AS FLOAT) AS cumulative_gpa,
-              CAST(madgrades_course_grades.most_recent_gpa AS FLOAT) AS most_recent_gpa,
-              CAST(madgrades_course_grades.most_recent_gpa AS FLOAT) AS most_recent_gpa,
+              madgrades_course_grades.median_grade as median_grade,
+              ROUND(CAST(madgrades_course_grades.a_percentage as FLOAT), 2) as a_percent,
+              ROUND(CAST(madgrades_course_grades.ab_percentage as FLOAT), 2) as ab_percent,
+              ROUND(CAST(madgrades_course_grades.b_percentage as FLOAT), 2) as b_percent,
+              ROUND(CAST(madgrades_course_grades.bc_percentage as FLOAT), 2) as bc_percent,
+              ROUND(CAST(madgrades_course_grades.c_percentage as FLOAT), 2) as c_percent,
+              ROUND(CAST(madgrades_course_grades.d_percentage as FLOAT), 2) as d_percent,
+              ROUND(CAST(madgrades_course_grades.f_percentage as FLOAT), 2 ) as f_percent,
+              ROUND(CAST(madgrades_course_grades.cumulative_gpa AS FLOAT), 2) AS cumulative_gpa,
+              ROUND(CAST(madgrades_course_grades.most_recent_gpa AS FLOAT), 2) AS most_recent_gpa,
+              ROUND(CAST(madgrades_course_grades.most_recent_gpa AS FLOAT), 2) AS most_recent_gpa,
               madgrades_course_grades.course_uuid AS madgrades_course_uuid
 
       FROM courses 
@@ -351,19 +420,18 @@ app.get("/api/query", async (c) => {
 
     const [coursesResults] = await pool.execute(coursesSql, courseIdList);
 
-    // Get sections with pre-calculated RMP averages
-    const sectionsWithRmpSql = `
+    // Get sections with pre-calculated RMP averages and meetings
+    const sectionsWithRmpAndMeetingsSql = `
       WITH section_rmp_avg AS (
         SELECT 
           sections.section_id,
+          sections.unique_section_id,
           sections.course_id,
           sections.status,
           sections.available_seats,
           sections.waitlist_total,
           sections.capacity,
           sections.enrolled,
-          sections.meeting_time,
-          sections.location,
           sections.instruction_mode,
           sections.is_asynchronous,
           CASE 
@@ -406,10 +474,9 @@ app.get("/api/query", async (c) => {
         LEFT JOIN section_instructors si ON sections.section_id = si.section_id
         LEFT JOIN rmp_cleaned ON si.instructor_name = rmp_cleaned.full_name
         WHERE sections.course_id IN (${coursePlaceholders})
-        GROUP BY sections.section_id, sections.course_id, sections.status, 
+        GROUP BY sections.section_id, sections.course_id, sections.unique_section_id, sections.status, 
                  sections.available_seats, sections.waitlist_total, sections.capacity, 
-                 sections.enrolled, sections.meeting_time, sections.location, 
-                 sections.instruction_mode, sections.is_asynchronous
+                 sections.enrolled, sections.instruction_mode, sections.is_asynchronous
       )
       SELECT 
         sra.*,
@@ -417,21 +484,31 @@ app.get("/api/query", async (c) => {
         rmp.avg_rating as instructor_avg_rating,
         rmp.avg_difficulty as instructor_avg_difficulty,
         rmp.num_ratings as instructor_num_ratings,
-        rmp.would_take_again_percent as instructor_would_take_again_percent
+        rmp.legacy_id as rmp_instructor_id,
+        rmp.would_take_again_percent as instructor_would_take_again_percent,
+        sm.meeting_number,
+        sm.meeting_days,
+        sm.start_time,
+        sm.end_time,
+        sm.meeting_type,
+        sm.building_name,
+        sm.room,
+        sm.location
       FROM section_rmp_avg sra
       LEFT JOIN section_instructors si ON sra.section_id = si.section_id
       LEFT JOIN rmp_cleaned rmp ON si.instructor_name = rmp.full_name
-      ORDER BY sra.course_id, sra.status DESC, si.instructor_name
+      LEFT JOIN section_meetings sm ON sra.unique_section_id = sm.unique_section_id
+      ORDER BY sra.course_id, sra.status DESC, si.instructor_name, sm.meeting_number
     `;
 
-    const [sectionsResults] = await pool.execute(sectionsWithRmpSql, courseIdList);
+    const [sectionsResults] = await pool.execute(sectionsWithRmpAndMeetingsSql, courseIdList);
 
-    console.log("=== SECTIONS WITH RMP RESULTS ===");
-    console.log("Total sections returned:", sectionsResults.length);
-    console.log("First few sections:", sectionsResults.slice(0, 3));
-    console.log("==================================");
+    console.log("=== SECTIONS WITH RMP AND MEETINGS RESULTS ===");
+    console.log("Total rows returned:", sectionsResults.length);
+    console.log("First few rows:", sectionsResults.slice(0, 3));
+    console.log("===============================================");
 
-    // Group sections by course and section
+    // Group sections by course and section, including meetings
     const sectionsByCourse = {};
     
     if (Array.isArray(sectionsResults)) {
@@ -440,20 +517,20 @@ app.get("/api/query", async (c) => {
           sectionsByCourse[row.course_id] = {};
         }
 
-        // Use section_id as key to group instructors by section
-        if (!sectionsByCourse[row.course_id][row.section_id]) {
-          sectionsByCourse[row.course_id][row.section_id] = {
+        // Use section_id as key to group instructors and meetings by section
+        if (!sectionsByCourse[row.course_id][row.unique_section_id]) {
+          sectionsByCourse[row.course_id][row.unique_section_id] = {
             section_id: row.section_id,
+            unique_section_id: row.unique_section_id,
             status: row.status,
             available_seats: row.available_seats,
             waitlist_total: row.waitlist_total,
             capacity: row.capacity,
             enrolled: row.enrolled,
-            meeting_time: row.meeting_time,
-            location: row.location,
             instruction_mode: row.instruction_mode,
             is_asynchronous: row.is_asynchronous,
             instructors: [],
+            meetings: [], // New: array to store meeting times
             // Pre-calculated section-level averages from SQL
             section_avg_rating: row.section_avg_rating,
             section_avg_difficulty: row.section_avg_difficulty,
@@ -464,7 +541,7 @@ app.get("/api/query", async (c) => {
 
         // Add instructor if it exists and isn't already added
         if (row.instructor_name) {
-          const existingInstructor = sectionsByCourse[row.course_id][row.section_id].instructors
+          const existingInstructor = sectionsByCourse[row.course_id][row.unique_section_id].instructors
             .find(inst => inst.name === row.instructor_name);
 
           if (!existingInstructor) {
@@ -473,10 +550,40 @@ app.get("/api/query", async (c) => {
               avg_rating: row.instructor_avg_rating,
               avg_difficulty: row.instructor_avg_difficulty,
               num_ratings: row.instructor_num_ratings,
-              would_take_again_percent: row.instructor_would_take_again_percent
+              would_take_again_percent: row.instructor_would_take_again_percent,
+              rmp_instructor_id: row.rmp_instructor_id
             };
 
-            sectionsByCourse[row.course_id][row.section_id].instructors.push(instructorData);
+            sectionsByCourse[row.course_id][row.unique_section_id].instructors.push(instructorData);
+          }
+        }
+
+        // Add meeting if it exists and isn't already added
+        if (row.meeting_number !== null && row.meeting_number !== undefined) {
+          const existingMeeting = sectionsByCourse[row.course_id][row.unique_section_id].meetings
+            .find(meeting => 
+              meeting.meeting_number === row.meeting_number &&
+              meeting.meeting_days === row.meeting_days &&
+              meeting.start_time === row.start_time &&
+              meeting.end_time === row.end_time &&
+              meeting.meeting_type === row.meeting_type &&
+              meeting.building_name === row.building_name &&
+              meeting.room === row.room
+            );
+        
+          if (!existingMeeting) {
+            const meetingData = {
+              meeting_number: row.meeting_number,
+              meeting_days: row.meeting_days,
+              meeting_type: row.meeting_type,
+              start_time: row.start_time,
+              end_time: row.end_time,
+              building_name: row.building_name,
+              room: row.room,
+              location: row.location
+            };
+        
+            sectionsByCourse[row.course_id][row.unique_section_id].meetings.push(meetingData);
           }
         }
       });
@@ -495,12 +602,12 @@ app.get("/api/query", async (c) => {
       };
     });
 
-    console.log("=== FINAL COURSES WITH SECTIONS ===");
+    console.log("=== FINAL COURSES WITH SECTIONS AND MEETINGS ===");
     console.log(`Total courses: ${coursesWithSections.length}`);
     coursesWithSections.forEach(course => {
       console.log(`Course ${course.course_id}: ${course.sections.length} sections`);
       course.sections.forEach(section => {
-        console.log(`  Section ${section.section_id}: rating=${section.section_avg_rating}, difficulty=${section.section_avg_difficulty}, total_ratings=${section.section_total_ratings}`);
+        console.log(`  Section ${section.unique_section_id}: rating=${section.section_avg_rating}, ${section.meetings.length} meetings`);
       });
     });
 
@@ -517,6 +624,12 @@ app.get("/api/query", async (c) => {
         min_section_avg_difficulty,
         min_section_total_ratings,
         min_section_avg_would_take_again,
+        meeting_days,
+        start_time_after,
+        start_time_before,
+        end_time_after,
+        end_time_before,
+        building_name,
       }
     });
   } catch (error) {
