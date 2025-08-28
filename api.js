@@ -33,7 +33,7 @@ app.get("/api/courses", async (c) => {
     console.error("Error in /api/courses:", error);
     return c.json({ error: "Internal server error" }, 500);
   }
-}); 
+});
 
 app.get("/api/query", async (c) => {
   const apiKey = c.req.header("x-api-key");
@@ -72,6 +72,10 @@ app.get("/api/query", async (c) => {
       min_most_recent_gpa,
       median_grade,
       min_a_percent,
+      no_prereqs,
+      sophomore_standing,
+      junior_standing,
+      senior_standing,
       // New RMP section-level filters
       min_section_avg_rating,
       min_section_avg_difficulty,
@@ -84,7 +88,7 @@ app.get("/api/query", async (c) => {
       end_time_after,
       end_time_before,
       building_name,
-      page = 1
+      page = 1,
     } = c.req.query();
 
     // Build WHERE clause for section filters
@@ -96,13 +100,13 @@ app.get("/api/query", async (c) => {
 
     if (status) {
       // Handle multiple statuses separated by commas
-      const statusList = status.split(',').map(s => s.trim().toUpperCase());
+      const statusList = status.split(",").map((s) => s.trim().toUpperCase());
       if (statusList.length === 1) {
         sectionFilters.push("sections.status = ?");
         filterParams.push(statusList[0]);
       } else {
         // Multiple statuses - use IN clause
-        const statusPlaceholders = statusList.map(() => '?').join(',');
+        const statusPlaceholders = statusList.map(() => "?").join(",");
         sectionFilters.push(`sections.status IN (${statusPlaceholders})`);
         filterParams.push(...statusList);
       }
@@ -144,31 +148,55 @@ app.get("/api/query", async (c) => {
     }
     if (ethnic_studies) {
       courseFilters.push("courses.ethnic_studies = ?");
-      filterParams.push('ETHNIC ST');
+      filterParams.push("ETHNIC ST");
     }
     if (social_science) {
       courseFilters.push("courses.social_science = ?");
-      filterParams.push('S');
+      filterParams.push("S");
     }
     if (humanities) {
       courseFilters.push("courses.humanities = ?");
-      filterParams.push('H');
+      filterParams.push("H");
     }
     if (biological_science) {
       courseFilters.push("courses.biological_science = ?");
-      filterParams.push('B');
+      filterParams.push("B");
     }
     if (physical_science) {
       courseFilters.push("courses.physical_science = ?");
-      filterParams.push('P');
+      filterParams.push("P");
     }
     if (natural_science) {
       courseFilters.push("courses.natural_science = ?");
-      filterParams.push('N');
+      filterParams.push("N");
     }
     if (literature) {
       courseFilters.push("courses.literature = ?");
-      filterParams.push('L');
+      filterParams.push("L");
+    }
+
+    if (no_prereqs || sophomore_standing || junior_standing || senior_standing) {
+      const prereqConditions = [];
+      
+      if (no_prereqs) {
+        prereqConditions.push("courses.enrollment_prerequisites = ?");
+        filterParams.push("None");
+      }
+      if (sophomore_standing) {
+        prereqConditions.push("(courses.enrollment_prerequisites = ? OR courses.enrollment_prerequisites = ?)");
+        filterParams.push("Sophomore standing", "Sophomore standing only");
+      }
+      if (junior_standing) {
+        prereqConditions.push("(courses.enrollment_prerequisites = ? OR courses.enrollment_prerequisites = ?)");
+        filterParams.push("Junior standing", "Junior standing only");
+      }
+      if (senior_standing) {
+        prereqConditions.push("(courses.enrollment_prerequisites = ? OR courses.enrollment_prerequisites = ?)");
+        filterParams.push("Senior standing", "Senior standing only");
+      }
+      
+      // Add the OR condition to course filters
+      courseFilters.push(`(${prereqConditions.join(" OR ")})`);
     }
 
     if (min_cumulative_gpa) {
@@ -195,7 +223,9 @@ app.get("/api/query", async (c) => {
       filterParams.push(parseInt(min_section_total_ratings));
     }
     if (min_section_avg_would_take_again) {
-      rmpSectionFilters.push("section_rmp_avg.section_avg_would_take_again >= ?");
+      rmpSectionFilters.push(
+        "section_rmp_avg.section_avg_would_take_again >= ?"
+      );
       filterParams.push(parseFloat(min_section_avg_would_take_again));
     }
 
@@ -205,19 +235,27 @@ app.get("/api/query", async (c) => {
       filterParams.push(`%${meeting_days}%`);
     }
     if (start_time_after) {
-      meetingFilters.push("STR_TO_DATE(section_meetings.start_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')");
+      meetingFilters.push(
+        "STR_TO_DATE(section_meetings.start_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')"
+      );
       filterParams.push(start_time_after);
     }
     if (start_time_before) {
-      meetingFilters.push("STR_TO_DATE(section_meetings.start_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')");
+      meetingFilters.push(
+        "STR_TO_DATE(section_meetings.start_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')"
+      );
       filterParams.push(start_time_before);
     }
     if (end_time_after) {
-      meetingFilters.push("STR_TO_DATE(section_meetings.end_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')");
+      meetingFilters.push(
+        "STR_TO_DATE(section_meetings.end_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')"
+      );
       filterParams.push(end_time_after);
     }
     if (end_time_before) {
-      meetingFilters.push("STR_TO_DATE(section_meetings.end_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')");
+      meetingFilters.push(
+        "STR_TO_DATE(section_meetings.end_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')"
+      );
       filterParams.push(end_time_before);
     }
     if (building_name) {
@@ -226,15 +264,22 @@ app.get("/api/query", async (c) => {
     }
 
     if (search_param) {
-      courseFilters.push("(courses.course_designation LIKE ? OR courses.full_course_designation LIKE ? OR si.instructor_name LIKE ?)");
+      courseFilters.push(
+        "(courses.course_designation LIKE ? OR courses.course_title LIKE ? OR courses.full_course_designation LIKE ? OR si.instructor_name LIKE ?)"
+      );
       const searchValue = `%${search_param}%`;
-      filterParams.push(searchValue, searchValue, searchValue);
+      filterParams.push(searchValue, searchValue, searchValue, searchValue);
     }
 
     const offset = (page - 1) * limit;
 
-    let allFilters = [...sectionFilters, ...courseFilters, ...rmpSectionFilters, ...meetingFilters];
-    
+    let allFilters = [
+      ...sectionFilters,
+      ...courseFilters,
+      ...rmpSectionFilters,
+      ...meetingFilters,
+    ];
+
     console.log("All filters:", allFilters);
     console.log("Filter params:", filterParams);
 
@@ -243,11 +288,12 @@ app.get("/api/query", async (c) => {
     // Determine if we need to join section_meetings table
     const needMeetingJoin = meetingFilters.length > 0;
 
+    // UPDATED: Count query now uses DISTINCT course_uuid instead of course_id
     let totalCountSql = `
      WITH section_rmp_avg AS (
           SELECT 
             sections.section_id,
-            sections.course_id,
+            sections.course_uuid,
             CASE 
               WHEN COUNT(CASE WHEN rmp_cleaned.avg_rating IS NOT NULL THEN 1 END) > 0 
               THEN ROUND(
@@ -287,23 +333,31 @@ app.get("/api/query", async (c) => {
           FROM sections
           LEFT JOIN section_instructors si ON sections.section_id = si.section_id
           LEFT JOIN rmp_cleaned ON si.instructor_name = rmp_cleaned.full_name
-          GROUP BY sections.section_id, sections.course_id
+          GROUP BY sections.section_id, sections.course_uuid
         )
-    SELECT COUNT(DISTINCT courses.course_id) AS total
+    SELECT COUNT(DISTINCT courses.course_uuid) AS total
     FROM courses
-    JOIN sections ON courses.course_id = sections.course_id
+    JOIN sections ON courses.course_uuid = sections.course_uuid
     JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
     LEFT JOIN section_instructors si ON sections.section_id = si.section_id
-    ${rmpSectionFilters.length > 0 ? 'JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id' : ''}
-    ${needMeetingJoin ? 'LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id' : ''}
-    ${allFilters.length > 0 ? `WHERE ${allFilters.join(' AND ')}` : ''}
+    ${
+      rmpSectionFilters.length > 0
+        ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
+        : ""
+    }
+    ${
+      needMeetingJoin
+        ? "LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id"
+        : ""
+    }
+    ${allFilters.length > 0 ? `WHERE ${allFilters.join(" AND ")}` : ""}
   `;
 
     const [countRows] = await pool.execute(totalCountSql, filterParams);
     const totalCount = countRows?.[0]?.total ?? 0;
     const hasMore = offset + limitValue < totalCount;
 
-    // Build the query with RMP section calculations
+    // Build the query with RMP section calculations - UPDATED to use course_uuid
     let distinctCoursesSql, queryParams;
 
     if (allFilters.length > 0) {
@@ -312,7 +366,7 @@ app.get("/api/query", async (c) => {
         WITH section_rmp_avg AS (
           SELECT 
             sections.section_id,
-            sections.course_id,
+            sections.course_uuid,
             CASE 
               WHEN COUNT(CASE WHEN rmp_cleaned.avg_rating IS NOT NULL THEN 1 END) > 0 
               THEN ROUND(
@@ -352,25 +406,33 @@ app.get("/api/query", async (c) => {
           FROM sections
           LEFT JOIN section_instructors si ON sections.section_id = si.section_id
           LEFT JOIN rmp_cleaned ON si.instructor_name = rmp_cleaned.full_name
-          GROUP BY sections.section_id, sections.course_id
+          GROUP BY sections.section_id, sections.course_uuid
         )
-        SELECT DISTINCT courses.course_id
+        SELECT DISTINCT courses.course_uuid
         FROM courses
-        JOIN sections ON courses.course_id = sections.course_id
+        JOIN sections ON courses.course_uuid = sections.course_uuid
         JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
         LEFT JOIN section_instructors si ON sections.section_id = si.section_id
-        ${rmpSectionFilters.length > 0 ? 'JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id' : ''}
-        ${needMeetingJoin ? 'LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id' : ''}
-        ${allFilters.length > 0 ? `WHERE ${allFilters.join(' AND ')}` : ''}
+        ${
+          rmpSectionFilters.length > 0
+            ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
+            : ""
+        }
+        ${
+          needMeetingJoin
+            ? "LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id"
+            : ""
+        }
+        ${allFilters.length > 0 ? `WHERE ${allFilters.join(" AND ")}` : ""}
         LIMIT ${limitValue} OFFSET ${offset}
       `;
       queryParams = filterParams;
     } else {
-      // No filters - simple query
+      // No filters - simple query using course_uuid
       distinctCoursesSql = `
-        SELECT DISTINCT courses.course_id
+        SELECT DISTINCT courses.course_uuid
         FROM courses
-        JOIN sections ON courses.course_id = sections.course_id
+        JOIN sections ON courses.course_uuid = sections.course_uuid
         LIMIT ${limitValue} OFFSET ${offset}
       `;
       queryParams = [];
@@ -381,52 +443,69 @@ app.get("/api/query", async (c) => {
     console.log("Params:", queryParams);
     console.log("===============================");
 
-    const [courseIds] = await pool.execute(distinctCoursesSql, queryParams);
+    const [courseUuids] = await pool.execute(distinctCoursesSql, queryParams);
 
-    if (!Array.isArray(courseIds) || courseIds.length === 0) {
+    if (!Array.isArray(courseUuids) || courseUuids.length === 0) {
       return c.json({
         data: [],
         count: 0,
       });
     }
 
-    // Get full course details for these course IDs
-    const courseIdList = courseIds.map(row => row.course_id);
-    const coursePlaceholders = courseIdList.map(() => '?').join(',');
+    // Get full course details for these course UUIDs - UPDATED to use course_uuid
+    const courseUuidList = courseUuids.map((row) => row.course_uuid);
+    const coursePlaceholders = courseUuidList.map(() => "?").join(",");
 
+    // UPDATED: Select one representative course per course_uuid (pick the first one)
     const coursesSql = `
-      SELECT course_id, course_title, course_designation,  enrollment_prerequisites, letters_and_science_credits, course_description, subject_code, course_designation, full_course_designation, 
-             minimum_credits, maximum_credits, ethnic_studies, social_science, 
-             humanities, biological_science, physical_science, natural_science, 
-             literature, level, 
-              madgrades_course_grades.median_grade as median_grade,
-              ROUND(CAST(madgrades_course_grades.a_percentage as FLOAT), 2) as a_percent,
-              ROUND(CAST(madgrades_course_grades.ab_percentage as FLOAT), 2) as ab_percent,
-              ROUND(CAST(madgrades_course_grades.b_percentage as FLOAT), 2) as b_percent,
-              ROUND(CAST(madgrades_course_grades.bc_percentage as FLOAT), 2) as bc_percent,
-              ROUND(CAST(madgrades_course_grades.c_percentage as FLOAT), 2) as c_percent,
-              ROUND(CAST(madgrades_course_grades.d_percentage as FLOAT), 2) as d_percent,
-              ROUND(CAST(madgrades_course_grades.f_percentage as FLOAT), 2 ) as f_percent,
-              ROUND(CAST(madgrades_course_grades.cumulative_gpa AS FLOAT), 2) AS cumulative_gpa,
-              ROUND(CAST(madgrades_course_grades.most_recent_gpa AS FLOAT), 2) AS most_recent_gpa,
-              ROUND(CAST(madgrades_course_grades.most_recent_gpa AS FLOAT), 2) AS most_recent_gpa,
-              madgrades_course_grades.course_uuid AS madgrades_course_uuid
-
+      SELECT 
+        courses.course_uuid,
+        MIN(courses.course_id) as course_id,
+        MAX(courses.course_title) as course_title,
+        MAX(courses.course_designation) as course_designation,
+        MAX(courses.enrollment_prerequisites) as enrollment_prerequisites,
+        MAX(courses.letters_and_science_credits) as letters_and_science_credits,
+        MAX(courses.course_description) as course_description,
+        MAX(courses.subject_code) as subject_code,
+        MAX(courses.full_course_designation) as full_course_designation,
+        MAX(courses.minimum_credits) as minimum_credits,
+        MAX(courses.maximum_credits) as maximum_credits,
+        MAX(courses.ethnic_studies) as ethnic_studies,
+        MAX(courses.social_science) as social_science,
+        MAX(courses.humanities) as humanities,
+        MAX(courses.biological_science) as biological_science,
+        MAX(courses.physical_science) as physical_science,
+        MAX(courses.natural_science) as natural_science,
+        MAX(courses.literature) as literature,
+        MAX(courses.level) as level,
+        MAX(madgrades_course_grades.median_grade) as median_grade,
+        MAX(ROUND(CAST(madgrades_course_grades.a_percentage as FLOAT), 2)) as a_percent,
+        MAX(ROUND(CAST(madgrades_course_grades.ab_percentage as FLOAT), 2)) as ab_percent,
+        MAX(ROUND(CAST(madgrades_course_grades.b_percentage as FLOAT), 2)) as b_percent,
+        MAX(ROUND(CAST(madgrades_course_grades.bc_percentage as FLOAT), 2)) as bc_percent,
+        MAX(ROUND(CAST(madgrades_course_grades.c_percentage as FLOAT), 2)) as c_percent,
+        MAX(ROUND(CAST(madgrades_course_grades.d_percentage as FLOAT), 2)) as d_percent,
+        MAX(ROUND(CAST(madgrades_course_grades.f_percentage as FLOAT), 2)) as f_percent,
+        MAX(ROUND(CAST(madgrades_course_grades.cumulative_gpa AS FLOAT), 2)) AS cumulative_gpa,
+        MAX(ROUND(CAST(madgrades_course_grades.most_recent_gpa AS FLOAT), 2)) AS most_recent_gpa,
+        MAX(madgrades_course_grades.course_uuid) AS madgrades_course_uuid,
+        GROUP_CONCAT(DISTINCT courses.course_designation ORDER BY courses.course_designation SEPARATOR ', ') as all_course_designations
       FROM courses 
       JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
-      WHERE course_id IN (${coursePlaceholders})
-      ORDER BY course_id
+      WHERE courses.course_uuid IN (${coursePlaceholders})
+      GROUP BY courses.course_uuid, courses.catalog_number
+      ORDER BY courses.catalog_number
     `;
 
-    const [coursesResults] = await pool.execute(coursesSql, courseIdList);
+    const [coursesResults] = await pool.execute(coursesSql, courseUuidList);
 
-    // Get sections with pre-calculated RMP averages and meetings
+    // Get sections with pre-calculated RMP averages and meetings - UPDATED to use course_uuid
     const sectionsWithRmpAndMeetingsSql = `
       WITH section_rmp_avg AS (
         SELECT 
           sections.section_id,
           sections.unique_section_id,
-          sections.course_id,
+          sections.course_uuid,
           sections.status,
           sections.available_seats,
           sections.waitlist_total,
@@ -473,8 +552,8 @@ app.get("/api/query", async (c) => {
         FROM sections
         LEFT JOIN section_instructors si ON sections.section_id = si.section_id
         LEFT JOIN rmp_cleaned ON si.instructor_name = rmp_cleaned.full_name
-        WHERE sections.course_id IN (${coursePlaceholders})
-        GROUP BY sections.section_id, sections.course_id, sections.unique_section_id, sections.status, 
+        WHERE sections.course_uuid IN (${coursePlaceholders})
+        GROUP BY sections.section_id, sections.course_uuid, sections.unique_section_id, sections.status, 
                  sections.available_seats, sections.waitlist_total, sections.capacity, 
                  sections.enrolled, sections.instruction_mode, sections.is_asynchronous
       )
@@ -498,28 +577,31 @@ app.get("/api/query", async (c) => {
       LEFT JOIN section_instructors si ON sra.section_id = si.section_id
       LEFT JOIN rmp_cleaned rmp ON si.instructor_name = rmp.full_name
       LEFT JOIN section_meetings sm ON sra.unique_section_id = sm.unique_section_id
-      ORDER BY sra.course_id, sra.status DESC, si.instructor_name, sm.meeting_number
+      ORDER BY sra.course_uuid, sra.status DESC, si.instructor_name, sm.meeting_number
     `;
 
-    const [sectionsResults] = await pool.execute(sectionsWithRmpAndMeetingsSql, courseIdList);
+    const [sectionsResults] = await pool.execute(
+      sectionsWithRmpAndMeetingsSql,
+      courseUuidList
+    );
 
     console.log("=== SECTIONS WITH RMP AND MEETINGS RESULTS ===");
     console.log("Total rows returned:", sectionsResults.length);
     console.log("First few rows:", sectionsResults.slice(0, 3));
     console.log("===============================================");
 
-    // Group sections by course and section, including meetings
-    const sectionsByCourse = {};
-    
+    // Group sections by course_uuid and section, including meetings - UPDATED to use course_uuid
+    const sectionsByCourseUuid = {};
+
     if (Array.isArray(sectionsResults)) {
       sectionsResults.forEach((row) => {
-        if (!sectionsByCourse[row.course_id]) {
-          sectionsByCourse[row.course_id] = {};
+        if (!sectionsByCourseUuid[row.course_uuid]) {
+          sectionsByCourseUuid[row.course_uuid] = {};
         }
 
-        // Use section_id as key to group instructors and meetings by section
-        if (!sectionsByCourse[row.course_id][row.unique_section_id]) {
-          sectionsByCourse[row.course_id][row.unique_section_id] = {
+        // Use unique_section_id as key to group instructors and meetings by section
+        if (!sectionsByCourseUuid[row.course_uuid][row.unique_section_id]) {
+          sectionsByCourseUuid[row.course_uuid][row.unique_section_id] = {
             section_id: row.section_id,
             unique_section_id: row.unique_section_id,
             status: row.status,
@@ -535,14 +617,15 @@ app.get("/api/query", async (c) => {
             section_avg_rating: row.section_avg_rating,
             section_avg_difficulty: row.section_avg_difficulty,
             section_total_ratings: row.section_total_ratings,
-            section_avg_would_take_again: row.section_avg_would_take_again
+            section_avg_would_take_again: row.section_avg_would_take_again,
           };
         }
 
         // Add instructor if it exists and isn't already added
         if (row.instructor_name) {
-          const existingInstructor = sectionsByCourse[row.course_id][row.unique_section_id].instructors
-            .find(inst => inst.name === row.instructor_name);
+          const existingInstructor = sectionsByCourseUuid[row.course_uuid][
+            row.unique_section_id
+          ].instructors.find((inst) => inst.name === row.instructor_name);
 
           if (!existingInstructor) {
             const instructorData = {
@@ -551,17 +634,21 @@ app.get("/api/query", async (c) => {
               avg_difficulty: row.instructor_avg_difficulty,
               num_ratings: row.instructor_num_ratings,
               would_take_again_percent: row.instructor_would_take_again_percent,
-              rmp_instructor_id: row.rmp_instructor_id
+              rmp_instructor_id: row.rmp_instructor_id,
             };
 
-            sectionsByCourse[row.course_id][row.unique_section_id].instructors.push(instructorData);
+            sectionsByCourseUuid[row.course_uuid][
+              row.unique_section_id
+            ].instructors.push(instructorData);
           }
         }
 
         // Add meeting if it exists and isn't already added
         if (row.meeting_number !== null && row.meeting_number !== undefined) {
-          const existingMeeting = sectionsByCourse[row.course_id][row.unique_section_id].meetings
-            .find(meeting => 
+          const existingMeeting = sectionsByCourseUuid[row.course_uuid][
+            row.unique_section_id
+          ].meetings.find(
+            (meeting) =>
               meeting.meeting_number === row.meeting_number &&
               meeting.meeting_days === row.meeting_days &&
               meeting.start_time === row.start_time &&
@@ -569,8 +656,8 @@ app.get("/api/query", async (c) => {
               meeting.meeting_type === row.meeting_type &&
               meeting.building_name === row.building_name &&
               meeting.room === row.room
-            );
-        
+          );
+
           if (!existingMeeting) {
             const meetingData = {
               meeting_number: row.meeting_number,
@@ -580,34 +667,42 @@ app.get("/api/query", async (c) => {
               end_time: row.end_time,
               building_name: row.building_name,
               room: row.room,
-              location: row.location
+              location: row.location,
             };
-        
-            sectionsByCourse[row.course_id][row.unique_section_id].meetings.push(meetingData);
+
+            sectionsByCourseUuid[row.course_uuid][
+              row.unique_section_id
+            ].meetings.push(meetingData);
           }
         }
       });
     }
 
-    // Convert sections object to array for each course
-    Object.keys(sectionsByCourse).forEach(courseId => {
-      sectionsByCourse[courseId] = Object.values(sectionsByCourse[courseId]);
+    // Convert sections object to array for each course_uuid
+    Object.keys(sectionsByCourseUuid).forEach((courseUuid) => {
+      sectionsByCourseUuid[courseUuid] = Object.values(
+        sectionsByCourseUuid[courseUuid]
+      );
     });
 
-    // Combine courses with their sections
-    const coursesWithSections = coursesResults.map(course => {
+    // Combine courses with their sections - UPDATED to use course_uuid
+    const coursesWithSections = coursesResults.map((course) => {
       return {
         ...course,
-        sections: sectionsByCourse[course.course_id] || []
+        sections: sectionsByCourseUuid[course.course_uuid] || [],
       };
     });
 
     console.log("=== FINAL COURSES WITH SECTIONS AND MEETINGS ===");
     console.log(`Total courses: ${coursesWithSections.length}`);
-    coursesWithSections.forEach(course => {
-      console.log(`Course ${course.course_id}: ${course.sections.length} sections`);
-      course.sections.forEach(section => {
-        console.log(`  Section ${section.unique_section_id}: rating=${section.section_avg_rating}, ${section.meetings.length} meetings`);
+    coursesWithSections.forEach((course) => {
+      console.log(
+        `Course ${course.course_uuid}: ${course.sections.length} sections`
+      );
+      course.sections.forEach((section) => {
+        console.log(
+          `  Section ${section.unique_section_id}: rating=${section.section_avg_rating}, ${section.meetings.length} meetings`
+        );
       });
     });
 
@@ -630,7 +725,7 @@ app.get("/api/query", async (c) => {
         end_time_after,
         end_time_before,
         building_name,
-      }
+      },
     });
   } catch (error) {
     console.error("Error in /api/query:", error);
