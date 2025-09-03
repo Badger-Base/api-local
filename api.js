@@ -81,12 +81,18 @@ app.get("/api/query", async (c) => {
       min_section_avg_difficulty,
       min_section_total_ratings,
       min_section_avg_would_take_again,
-      // New meeting time filters
+      // New meeting time filters - now supporting comma-separated millisecond ranges
       meeting_days,
-      start_time_after,
-      start_time_before,
-      end_time_after,
-      end_time_before,
+      mondayStartTime,
+      mondayEndTime,
+      tuesdayStartTime,
+      tuesdayEndTime,
+      wednesdayStartTime,
+      wednesdayEndTime,
+      thursdayStartTime,
+      thursdayEndTime,
+      fridayStartTime,
+      fridayEndTime,
       building_name,
       page = 1,
     } = c.req.query();
@@ -97,6 +103,44 @@ app.get("/api/query", async (c) => {
     let rmpSectionFilters = []; // New: for RMP section-level filters
     let meetingFilters = []; // New: for meeting-related filters
     let filterParams = [];
+    let daysWithFilters = [];
+
+    // Helper function to create time range filters for a specific day
+    const addDayTimeFilter = (dayColumn, startTimes, endTimes, dayName) => {
+      if (startTimes && endTimes) {
+        const startArray = startTimes.split(',').map(t => parseInt(t.trim()));
+        const endArray = endTimes.split(',').map(t => parseInt(t.trim()));
+        
+        if (startArray.length !== endArray.length) {
+          console.warn(`Mismatch in ${dayName} time arrays: ${startArray.length} start times vs ${endArray.length} end times`);
+          return;
+        }
+
+        // Create OR conditions for each time range
+        const timeRangeConditions = [];
+        for (let i = 0; i < startArray.length; i++) {
+          const startTime = startArray[i];
+          const endTime = endArray[i];
+          
+          // Check if the meeting overlaps with the availability window
+          // Meeting overlaps if: meeting_start < availability_end AND meeting_end > availability_start
+          timeRangeConditions.push(`(
+            (section_meetings.${dayColumn}_meeting_start IS NULL 
+            AND section_meetings.${dayColumn}_meeting_end IS NULL) OR (
+            section_meetings.${dayColumn}_meeting_start < ?
+            AND section_meetings.${dayColumn}_meeting_end > ?)
+          )`);
+          
+          filterParams.push(endTime, startTime);
+        }
+        
+        if (timeRangeConditions.length > 0) {
+          daysWithFilters.push(dayName);
+          //Joining or so in case of multiple availability windows in a single day
+          meetingFilters.push(`(${timeRangeConditions.join(' OR ')})`);
+        }
+      }
+    };
 
     if (status) {
       // Handle multiple statuses separated by commas
@@ -229,39 +273,37 @@ app.get("/api/query", async (c) => {
       filterParams.push(parseFloat(min_section_avg_would_take_again));
     }
 
-    // New meeting time filters
-    if (meeting_days) {
-      meetingFilters.push("section_meetings.meeting_days LIKE ?");
-      filterParams.push(`%${meeting_days}%`);
+    // Add day-specific time filters and collect them
+    const dayFilters = [];
+    
+    addDayTimeFilter('monday', mondayStartTime, mondayEndTime, 'Monday');``
+    addDayTimeFilter('tuesday', tuesdayStartTime, tuesdayEndTime, 'Tuesday');
+    addDayTimeFilter('wednesday', wednesdayStartTime, wednesdayEndTime, 'Wednesday');
+    addDayTimeFilter('thursday', thursdayStartTime, thursdayEndTime, 'Thursday'); 
+    addDayTimeFilter('friday', fridayStartTime, fridayEndTime, 'Friday');
+ 
+  
+    console.log("Days with filters:", daysWithFilters);
+    console.log("Meeting filters:", meetingFilters);
+
+
+    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+
+    
+    // If we have any day filters, combine them with AND logic
+    // This means: the section must be compatible with ALL specified days
+    if (daysWithFilters.length > 0) {
+      allDays.forEach(day => {
+        if (!daysWithFilters.includes(day)) {
+          meetingFilters.push(`section_meetings.${day}_meeting_start IS NULL AND section_meetings.${day}_meeting_end IS NULL`);
+        }
+      });
+  
     }
-    if (start_time_after) {
-      meetingFilters.push(
-        "STR_TO_DATE(section_meetings.start_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')"
-      );
-      filterParams.push(start_time_after);
-    }
-    if (start_time_before) {
-      meetingFilters.push(
-        "STR_TO_DATE(section_meetings.start_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')"
-      );
-      filterParams.push(start_time_before);
-    }
-    if (end_time_after) {
-      meetingFilters.push(
-        "STR_TO_DATE(section_meetings.end_time, '%h:%i %p') >= STR_TO_DATE(?, '%h:%i %p')"
-      );
-      filterParams.push(end_time_after);
-    }
-    if (end_time_before) {
-      meetingFilters.push(
-        "STR_TO_DATE(section_meetings.end_time, '%h:%i %p') <= STR_TO_DATE(?, '%h:%i %p')"
-      );
-      filterParams.push(end_time_before);
-    }
-    if (building_name) {
-      meetingFilters.push("section_meetings.building_name LIKE ?");
-      filterParams.push(`%${building_name}%`);
-    }
+
+    console.log("Meeting filters:", meetingFilters);
+    
+
 
     if (search_param) {
       courseFilters.push(
@@ -572,7 +614,17 @@ app.get("/api/query", async (c) => {
         sm.meeting_type,
         sm.building_name,
         sm.room,
-        sm.location
+        sm.location,
+        sm.monday_meeting_start,
+        sm.monday_meeting_end,
+        sm.tuesday_meeting_start,
+        sm.tuesday_meeting_end,
+        sm.wednesday_meeting_start,
+        sm.wednesday_meeting_end,
+        sm.thursday_meeting_start,
+        sm.thursday_meeting_end,
+        sm.friday_meeting_start,
+        sm.friday_meeting_end
       FROM section_rmp_avg sra
       LEFT JOIN section_instructors si ON sra.section_id = si.section_id
       LEFT JOIN rmp_cleaned rmp ON si.instructor_name = rmp.full_name
@@ -668,6 +720,17 @@ app.get("/api/query", async (c) => {
               building_name: row.building_name,
               room: row.room,
               location: row.location,
+              // Add day-specific millisecond times for frontend use
+              monday_meeting_start: row.monday_meeting_start,
+              monday_meeting_end: row.monday_meeting_end,
+              tuesday_meeting_start: row.tuesday_meeting_start,
+              tuesday_meeting_end: row.tuesday_meeting_end,
+              wednesday_meeting_start: row.wednesday_meeting_start,
+              wednesday_meeting_end: row.wednesday_meeting_end,
+              thursday_meeting_start: row.thursday_meeting_start,
+              thursday_meeting_end: row.thursday_meeting_end,
+              friday_meeting_start: row.friday_meeting_start,
+              friday_meeting_end: row.friday_meeting_end,
             };
 
             sectionsByCourseUuid[row.course_uuid][
@@ -720,10 +783,16 @@ app.get("/api/query", async (c) => {
         min_section_total_ratings,
         min_section_avg_would_take_again,
         meeting_days,
-        start_time_after,
-        start_time_before,
-        end_time_after,
-        end_time_before,
+        mondayStartTime,
+        mondayEndTime,
+        tuesdayStartTime,
+        tuesdayEndTime,
+        wednesdayStartTime,
+        wednesdayEndTime,
+        thursdayStartTime,
+        thursdayEndTime,
+        fridayStartTime,
+        fridayEndTime,
         building_name,
       },
     });
