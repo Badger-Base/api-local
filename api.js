@@ -95,6 +95,7 @@ app.get("/api/query", async (c) => {
       fridayStartTime,
       fridayEndTime,
       building_name,
+      in_person_only, // this needs to be fixed
       page = 1,
     } = c.req.query();
 
@@ -128,11 +129,11 @@ app.get("/api/query", async (c) => {
           timeRangeConditions.push(`(
             (section_meetings.${dayColumn}_meeting_start IS NULL 
             AND section_meetings.${dayColumn}_meeting_end IS NULL) OR (
-            section_meetings.${dayColumn}_meeting_start < ?
-            AND section_meetings.${dayColumn}_meeting_end > ?)
+            section_meetings.${dayColumn}_meeting_start >= ?
+            AND section_meetings.${dayColumn}_meeting_end <= ?)
           )`);
           
-          filterParams.push(endTime, startTime);
+          filterParams.push(startTime, endTime);
         }
         
         if (timeRangeConditions.length > 0) {
@@ -224,6 +225,10 @@ app.get("/api/query", async (c) => {
       filterParams.push("L");
     }
 
+    if (in_person_only) {
+      meetingFilters.push("section_meetings.location != 'ONLINE' AND section_meetings.location != 'OFF CAMPUS'");
+    }
+
     if (no_prereqs || sophomore_standing || junior_standing || senior_standing) {
       const prereqConditions = [];
       
@@ -292,7 +297,8 @@ app.get("/api/query", async (c) => {
     console.log("Meeting filters:", meetingFilters);
 
 
-    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    console.log("Days with filters:", daysWithFilters);
+    const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
     
     // If we have any day filters, combine them with AND logic
@@ -305,6 +311,8 @@ app.get("/api/query", async (c) => {
       });
   
     }
+
+  
 
     console.log("Meeting filters:", meetingFilters);
     
