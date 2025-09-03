@@ -61,6 +61,7 @@ app.get("/api/query", async (c) => {
       min_credits,
       max_credits,
       level,
+      gen_ed,
       ethnic_studies,
       social_science,
       humanities,
@@ -189,6 +190,10 @@ app.get("/api/query", async (c) => {
     if (level) {
       courseFilters.push("courses.level = ?");
       filterParams.push(level);
+    }
+    if (gen_ed) {
+      courseFilters.push("courses.general_education = ?");
+      filterParams.push(gen_ed);
     }
     if (ethnic_studies) {
       courseFilters.push("courses.ethnic_studies = ?");
@@ -511,6 +516,7 @@ app.get("/api/query", async (c) => {
         MAX(courses.subject_code) as subject_code,
         MAX(courses.full_course_designation) as full_course_designation,
         MAX(courses.minimum_credits) as minimum_credits,
+        MAX(courses.general_education) as general_education,
         MAX(courses.maximum_credits) as maximum_credits,
         MAX(courses.ethnic_studies) as ethnic_studies,
         MAX(courses.social_science) as social_science,
