@@ -84,6 +84,7 @@ app.get("/api/query", async (c) => {
       min_section_avg_would_take_again,
       // New meeting time filters - now supporting comma-separated millisecond ranges
       meeting_days,
+      l_and_s,
       mondayStartTime,
       mondayEndTime,
       tuesdayStartTime,
@@ -112,7 +113,7 @@ app.get("/api/query", async (c) => {
       if (startTimes && endTimes) {
         const startArray = startTimes.split(',').map(t => parseInt(t.trim()));
         const endArray = endTimes.split(',').map(t => parseInt(t.trim()));
-        
+
         if (startArray.length !== endArray.length) {
           console.warn(`Mismatch in ${dayName} time arrays: ${startArray.length} start times vs ${endArray.length} end times`);
           return;
@@ -123,19 +124,18 @@ app.get("/api/query", async (c) => {
         for (let i = 0; i < startArray.length; i++) {
           const startTime = startArray[i];
           const endTime = endArray[i];
-          
+
           // Check if the meeting overlaps with the availability window
           // Meeting overlaps if: meeting_start < availability_end AND meeting_end > availability_start
           timeRangeConditions.push(`(
-            (section_meetings.${dayColumn}_meeting_start IS NULL 
-            AND section_meetings.${dayColumn}_meeting_end IS NULL) OR (
-            section_meetings.${dayColumn}_meeting_start >= ?
-            AND section_meetings.${dayColumn}_meeting_end <= ?)
+            section_meetings.${dayColumn}_meeting_start IS NOT NULL AND 
+            (section_meetings.${dayColumn}_meeting_start < ?
+            OR section_meetings.${dayColumn}_meeting_end > ?)
           )`);
-          
+
           filterParams.push(startTime, endTime);
         }
-        
+
         if (timeRangeConditions.length > 0) {
           daysWithFilters.push(dayName);
           //Joining or so in case of multiple availability windows in a single day
@@ -176,6 +176,10 @@ app.get("/api/query", async (c) => {
     if (median_grade) {
       courseFilters.push("madgrades_course_grades.median_grade = ?");
       filterParams.push(median_grade);
+    }
+
+    if (l_and_s) {
+      courseFilters.push("letters_and_science_credits = 'C'");
     }
 
     // Course-level filters
@@ -231,7 +235,7 @@ app.get("/api/query", async (c) => {
 
     if (no_prereqs || sophomore_standing || junior_standing || senior_standing) {
       const prereqConditions = [];
-      
+
       if (no_prereqs) {
         prereqConditions.push("courses.enrollment_prerequisites = ?");
         filterParams.push("None");
@@ -248,7 +252,7 @@ app.get("/api/query", async (c) => {
         prereqConditions.push("(courses.enrollment_prerequisites = ? OR courses.enrollment_prerequisites = ?)");
         filterParams.push("Senior standing", "Senior standing only");
       }
-      
+
       // Add the OR condition to course filters
       courseFilters.push(`(${prereqConditions.join(" OR ")})`);
     }
@@ -285,14 +289,14 @@ app.get("/api/query", async (c) => {
 
     // Add day-specific time filters and collect them
     const dayFilters = [];
-    
-    addDayTimeFilter('monday', mondayStartTime, mondayEndTime, 'Monday');``
+
+    addDayTimeFilter('monday', mondayStartTime, mondayEndTime, 'Monday'); ``
     addDayTimeFilter('tuesday', tuesdayStartTime, tuesdayEndTime, 'Tuesday');
     addDayTimeFilter('wednesday', wednesdayStartTime, wednesdayEndTime, 'Wednesday');
-    addDayTimeFilter('thursday', thursdayStartTime, thursdayEndTime, 'Thursday'); 
+    addDayTimeFilter('thursday', thursdayStartTime, thursdayEndTime, 'Thursday');
     addDayTimeFilter('friday', fridayStartTime, fridayEndTime, 'Friday');
- 
-  
+
+
     console.log("Days with filters:", daysWithFilters);
     console.log("Meeting filters:", meetingFilters);
 
@@ -300,7 +304,7 @@ app.get("/api/query", async (c) => {
     console.log("Days with filters:", daysWithFilters);
     const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-    
+
     // If we have any day filters, combine them with AND logic
     // This means: the section must be compatible with ALL specified days
     if (daysWithFilters.length > 0) {
@@ -309,13 +313,13 @@ app.get("/api/query", async (c) => {
           meetingFilters.push(`section_meetings.${day}_meeting_start IS NULL AND section_meetings.${day}_meeting_end IS NULL`);
         }
       });
-  
+
     }
 
-  
+
 
     console.log("Meeting filters:", meetingFilters);
-    
+
 
 
     if (search_param) {
@@ -332,7 +336,6 @@ app.get("/api/query", async (c) => {
       ...sectionFilters,
       ...courseFilters,
       ...rmpSectionFilters,
-      ...meetingFilters,
     ];
 
     console.log("All filters:", allFilters);
@@ -342,6 +345,19 @@ app.get("/api/query", async (c) => {
 
     // Determine if we need to join section_meetings table
     const needMeetingJoin = meetingFilters.length > 0;
+
+
+    if (needMeetingJoin) {
+      const meetingSubquery = `
+      NOT EXISTS (
+        SELECT 1 
+        FROM section_meetings 
+        WHERE section_meetings.unique_section_id = sections.unique_section_id
+        AND (${meetingFilters.join(' OR ')})
+      )
+      `
+      allFilters.push(meetingSubquery);
+    }
 
     // UPDATED: Count query now uses DISTINCT course_uuid instead of course_id
     let totalCountSql = `
@@ -395,16 +411,10 @@ app.get("/api/query", async (c) => {
     JOIN sections ON courses.course_uuid = sections.course_uuid
     JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
     LEFT JOIN section_instructors si ON sections.section_id = si.section_id
-    ${
-      rmpSectionFilters.length > 0
+    ${rmpSectionFilters.length > 0
         ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
         : ""
-    }
-    ${
-      needMeetingJoin
-        ? "LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id"
-        : ""
-    }
+      }
     ${allFilters.length > 0 ? `WHERE ${allFilters.join(" AND ")}` : ""}
   `;
 
@@ -468,15 +478,13 @@ app.get("/api/query", async (c) => {
         JOIN sections ON courses.course_uuid = sections.course_uuid
         JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
         LEFT JOIN section_instructors si ON sections.section_id = si.section_id
-        ${
-          rmpSectionFilters.length > 0
-            ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
-            : ""
+        ${rmpSectionFilters.length > 0
+          ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
+          : ""
         }
-        ${
-          needMeetingJoin
-            ? "LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id"
-            : ""
+        ${needMeetingJoin
+          ? "LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id"
+          : ""
         }
         ${allFilters.length > 0 ? `WHERE ${allFilters.join(" AND ")}` : ""}
         LIMIT ${limitValue} OFFSET ${offset}
