@@ -98,6 +98,8 @@ app.get("/api/query", async (c) => {
       building_name,
       in_person_only, // this needs to be fixed
       page = 1,
+      sort,
+      
     } = c.req.query();
 
     // Build WHERE clause for section filters
@@ -343,6 +345,18 @@ app.get("/api/query", async (c) => {
 
     const limitValue = parseInt(limit) || 10;
 
+    // Build ORDER BY clause based on sort parameter
+    let orderByClause = "ORDER BY courses.catalog_number"; // default
+    if (sort) {
+      const sortLower = sort.toLowerCase();
+      if (sortLower === "cumulative_gpa") {
+        orderByClause = "ORDER BY madgrades_course_grades.cumulative_gpa DESC";
+      } else if (sortLower === "recent_gpa") {
+        orderByClause = "ORDER BY madgrades_course_grades.most_recent_gpa DESC";
+      }
+      // If sort is not recognized, keep default
+    }
+
     // Determine if we need to join section_meetings table
     const needMeetingJoin = meetingFilters.length > 0;
 
@@ -557,8 +571,8 @@ app.get("/api/query", async (c) => {
       FROM courses 
       JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
       WHERE courses.course_uuid IN (${coursePlaceholders})
-      GROUP BY courses.course_uuid, courses.catalog_number
-      ORDER BY courses.catalog_number
+      GROUP BY courses.course_uuid, courses.catalog_number, madgrades_course_grades.cumulative_gpa, madgrades_course_grades.most_recent_gpa
+      ${orderByClause}
     `;
 
     const [coursesResults] = await pool.execute(coursesSql, courseUuidList);
@@ -816,6 +830,7 @@ app.get("/api/query", async (c) => {
         fridayStartTime,
         fridayEndTime,
         building_name,
+        sort,
       },
     });
   } catch (error) {
