@@ -556,7 +556,11 @@ app.get("/api/query", async (c) => {
         MAX(courses.natural_science) as natural_science,
         MAX(courses.literature) as literature,
         MAX(courses.level) as level,
+        MAX(courses.typically_offered) as typically_offered,
         MAX(madgrades_course_grades.median_grade) as median_grade,
+        MAX(courses.workplace_experience_description) as workplace_experience_description,
+        MAX(courses.open_to_first_year) as open_to_first_year,
+        MAX(courses.repeatable_for_credit) as repeatable_for_credit,
         MAX(ROUND(CAST(madgrades_course_grades.a_percentage as FLOAT), 2)) as a_percent,
         MAX(ROUND(CAST(madgrades_course_grades.ab_percentage as FLOAT), 2)) as ab_percent,
         MAX(ROUND(CAST(madgrades_course_grades.b_percentage as FLOAT), 2)) as b_percent,
@@ -591,6 +595,7 @@ app.get("/api/query", async (c) => {
           sections.enrolled,
           sections.instruction_mode,
           sections.is_asynchronous,
+          sections.section_requisites,
           CASE 
             WHEN COUNT(CASE WHEN rmp_cleaned.avg_rating IS NOT NULL THEN 1 END) > 0 
             THEN ROUND(
@@ -633,7 +638,7 @@ app.get("/api/query", async (c) => {
         WHERE sections.course_uuid IN (${coursePlaceholders})
         GROUP BY sections.section_id, sections.course_uuid, sections.unique_section_id, sections.status, 
                  sections.available_seats, sections.waitlist_total, sections.capacity, 
-                 sections.enrolled, sections.instruction_mode, sections.is_asynchronous
+                 sections.enrolled, sections.instruction_mode, sections.is_asynchronous, sections.section_requisites
       )
       SELECT 
         sra.*,
@@ -699,6 +704,7 @@ app.get("/api/query", async (c) => {
             enrolled: row.enrolled,
             instruction_mode: row.instruction_mode,
             is_asynchronous: row.is_asynchronous,
+            section_requisites: row.section_requisites,
             instructors: [],
             meetings: [], // New: array to store meeting times
             // Pre-calculated section-level averages from SQL
