@@ -571,11 +571,13 @@ app.get("/api/query", async (c) => {
         MAX(ROUND(CAST(madgrades_course_grades.cumulative_gpa AS FLOAT), 2)) AS cumulative_gpa,
         MAX(ROUND(CAST(madgrades_course_grades.most_recent_gpa AS FLOAT), 2)) AS most_recent_gpa,
         MAX(madgrades_course_grades.course_uuid) AS madgrades_course_uuid,
+        MAX(subjects.footnotes) AS subject_footnotes,
         GROUP_CONCAT(DISTINCT courses.course_designation ORDER BY courses.course_designation SEPARATOR ', ') as all_course_designations
       FROM courses 
       JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
+      LEFT JOIN subjects ON courses.subject_code = subjects.subject_code
       WHERE courses.course_uuid IN (${coursePlaceholders})
-      GROUP BY courses.course_uuid, courses.catalog_number, madgrades_course_grades.cumulative_gpa, madgrades_course_grades.most_recent_gpa
+      GROUP BY courses.course_uuid, courses.catalog_number, madgrades_course_grades.cumulative_gpa, madgrades_course_grades.most_recent_gpa, subjects.footnotes
       ${orderByClause}
     `;
 
