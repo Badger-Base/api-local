@@ -652,6 +652,7 @@ app.get("/api/query", async (c) => {
         rmp.would_take_again_percent as instructor_would_take_again_percent,
         sm.meeting_number,
         sm.meeting_days,
+        sm.section_number,
         sm.start_time,
         sm.end_time,
         sm.meeting_type,
@@ -751,7 +752,8 @@ app.get("/api/query", async (c) => {
               meeting.end_time === row.end_time &&
               meeting.meeting_type === row.meeting_type &&
               meeting.building_name === row.building_name &&
-              meeting.room === row.room
+              meeting.room === row.room &&
+              meeting.section_number === row.section_number
           );
 
           if (!existingMeeting) {
@@ -764,6 +766,7 @@ app.get("/api/query", async (c) => {
               building_name: row.building_name,
               room: row.room,
               location: row.location,
+              section_number: row.section_number,
               // Add day-specific millisecond times for frontend use
               monday_meeting_start: row.monday_meeting_start,
               monday_meeting_end: row.monday_meeting_end,
