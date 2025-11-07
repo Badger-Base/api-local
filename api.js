@@ -1,6 +1,23 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import mysql from "mysql2/promise";
+import Redis from "ioredis";
+
+console.log("=== REDIS DEBUG ===");
+console.log("REDIS_URL:", Bun.env.REDIS_URL);
+console.log("URL length:", Bun.env.REDIS_URL?.length);
+console.log("URL type:", typeof Bun.env.REDIS_URL);
+console.log("=====================");
+
+if (!Bun.env.REDIS_URL) {
+  console.error("REDIS_URL is not set");
+  process.exit(1);
+}
+//go to  REDIS_URL for prod and REDIS_PUBLIC_URL for dev
+const redis = new Redis(Bun.env.REDIS_URL || "redis://localhost:6379");
+
+
+
 
 const app = new Hono();
 
@@ -50,7 +67,23 @@ app.get("/api/query", async (c) => {
     );
   }
 
+  
   try {
+
+
+    const params = c.req.query();
+
+    const cacheKey = `query:${JSON.stringify(params)}`;
+
+    // Try cache first
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log("Cache hit for", cacheKey);
+      return c.json(JSON.parse(cached));
+    }
+
+    console.log("Cache miss for", cacheKey);
+
     // Get query parameters for filtering
     const {
       search_param,
@@ -487,29 +520,38 @@ app.get("/api/query", async (c) => {
           LEFT JOIN rmp_cleaned ON si.instructor_name = rmp_cleaned.full_name
           GROUP BY sections.section_id, sections.course_uuid
         )
-        SELECT DISTINCT courses.course_uuid
-        FROM courses
-        JOIN sections ON courses.course_uuid = sections.course_uuid
-        JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
-        LEFT JOIN section_instructors si ON sections.section_id = si.section_id
-        ${rmpSectionFilters.length > 0
-          ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
-          : ""
-        }
-        ${needMeetingJoin
-          ? "LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id"
-          : ""
-        }
-        ${allFilters.length > 0 ? `WHERE ${allFilters.join(" AND ")}` : ""}
+        SELECT DISTINCT sorted_courses.course_uuid
+        FROM (
+          SELECT DISTINCT courses.course_uuid, courses.catalog_number, madgrades_course_grades.cumulative_gpa, madgrades_course_grades.most_recent_gpa
+          FROM courses
+          JOIN sections ON courses.course_uuid = sections.course_uuid
+          JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
+          LEFT JOIN section_instructors si ON sections.section_id = si.section_id
+          ${rmpSectionFilters.length > 0
+            ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
+            : ""
+          }
+          ${needMeetingJoin
+            ? "LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id"
+            : ""
+          }
+          ${allFilters.length > 0 ? `WHERE ${allFilters.join(" AND ")}` : ""}
+          ${orderByClause}
+        ) AS sorted_courses
         LIMIT ${limitValue} OFFSET ${offset}
       `;
       queryParams = filterParams;
     } else {
       // No filters - simple query using course_uuid
       distinctCoursesSql = `
-        SELECT DISTINCT courses.course_uuid
-        FROM courses
-        JOIN sections ON courses.course_uuid = sections.course_uuid
+        SELECT DISTINCT sorted_courses.course_uuid
+        FROM (
+          SELECT DISTINCT courses.course_uuid, courses.catalog_number, madgrades_course_grades.cumulative_gpa, madgrades_course_grades.most_recent_gpa
+          FROM courses
+          JOIN sections ON courses.course_uuid = sections.course_uuid
+          JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
+          ${orderByClause}
+        ) AS sorted_courses
         LIMIT ${limitValue} OFFSET ${offset}
       `;
       queryParams = [];
@@ -815,6 +857,41 @@ app.get("/api/query", async (c) => {
         );
       });
     });
+
+    // Cache the result
+    try {
+      await redis.set(cacheKey, JSON.stringify({
+        data: coursesWithSections,
+        count: coursesWithSections.length,
+        total_count: totalCount,
+        has_more: hasMore,
+        filters_applied: {
+          status,
+          min_available_seats,
+          instruction_mode,
+          min_section_avg_rating,
+          min_section_avg_difficulty,
+          min_section_total_ratings,
+          min_section_avg_would_take_again,
+          meeting_days,
+          mondayStartTime,
+          mondayEndTime,
+          tuesdayStartTime,
+          tuesdayEndTime,
+          wednesdayStartTime,
+          wednesdayEndTime,
+          thursdayStartTime,
+          thursdayEndTime,
+          fridayStartTime,
+          fridayEndTime,
+          building_name,
+          sort,
+        },
+      }));
+    } catch (error) {
+      console.warn("Redis set error:", error.message);
+      // Continue without caching
+    }
 
     return c.json({
       data: coursesWithSections,
