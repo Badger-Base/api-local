@@ -79,6 +79,15 @@ app.use(
   })
 );
 
+app.use(
+  "/subscriptions",
+  jwt({
+    secret: supabaseJwtSecret,
+  })
+    
+);
+
+
 app.post("/course-subscription", async (c) => {
   // Get the verified JWT payload from the middleware
   // The JWT middleware automatically verifies the token and extracts the payload
@@ -142,7 +151,65 @@ app.post("/course-subscription", async (c) => {
   }
 });
 
+app.delete("/course-subscription", async (c) => {
+  const apiKey = c.req.header("X-API-Key");
+
+  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  // Get the verified JWT payload from the middleware
+  const jwtPayload = c.get("jwtPayload") as any;
+
+  if (!jwtPayload) {
+    return c.json({ error: "Invalid token: no payload found" }, 401);
+  }
+
+  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
+  const userId = jwtPayload.sub;
+
+  if (!userId) {
+    return c.json({ error: "Invalid token: missing user ID" }, 401);
+  }
+
+  // Get course_id and email from request body
+  const { course_id, email } = await c.req.json();
+
+  if (!course_id) {
+    return c.json({ error: "course_id is required" }, 400);
+  }
+
+  if (!email) {
+    return c.json({ error: "email is required" }, 400);
+  }
+
+  try {
+    // Check if subscription exists
+    const [existingSubscriptions] = (await pool.execute(
+      "SELECT * FROM course_subscriptions WHERE email = ? AND course_id = ?",
+      [email, course_id]
+    )) as [any[], any];
+
+    if (existingSubscriptions.length === 0) {
+      return c.json({ error: "Subscription not found" }, 404);
+    }
+
+    // Delete the subscription
+    await pool.execute(
+      "DELETE FROM course_subscriptions WHERE email = ? AND course_id = ?",
+      [email, course_id]
+    );
+
+    return c.json({ message: "Subscription deleted successfully" }, 200);
+  } catch (error: any) {
+    console.error("Database error:", error);
+    return c.json({ error: "Failed to delete subscription" }, 500);
+  }
+});
+
 app.post("/section-subscription", async (c) => {
+
+
   const apiKey = c.req.header("X-API-Key");
 
   if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
@@ -199,6 +266,192 @@ app.post("/section-subscription", async (c) => {
   } catch (error: any) {
     console.error("Database error:", error);
     return c.json({ error: "Failed to create subscription" }, 500);
+  }
+});
+
+app.delete("/section-subscription", async (c) => {
+  const apiKey = c.req.header("X-API-Key");
+
+  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  
+  // Get the verified JWT payload from the middleware
+  const jwtPayload = c.get("jwtPayload") as any;
+
+  if (!jwtPayload) {
+    return c.json({ error: "Invalid token: no payload found" }, 401);
+  }
+
+  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
+  const userId = jwtPayload.sub;
+
+  if (!userId) {
+    return c.json({ error: "Invalid token: missing user ID" }, 401);
+  }
+
+  // Get section_id and email from request body
+  const { section_id, email } = await c.req.json();
+
+  if (!section_id) {
+    return c.json({ error: "section_id is required" }, 400);
+  }
+
+  if (!email) {
+    return c.json({ error: "email is required" }, 400);
+  }
+
+  try {
+    // Check if subscription exists
+    const [existingSubscriptions] = (await pool.execute(
+      "SELECT * FROM section_subscriptions WHERE email = ? AND section_id = ?",
+      [email, section_id]
+    )) as [any[], any];
+
+    if (existingSubscriptions.length === 0) {
+      return c.json({ error: "Subscription not found" }, 404);
+    }
+
+    // Delete the subscription
+    await pool.execute(
+      "DELETE FROM section_subscriptions WHERE email = ? AND section_id = ?",
+      [email, section_id]
+    );
+
+    return c.json({ message: "Subscription deleted successfully" }, 200);
+  } catch (error: any) {
+    console.error("Database error:", error);
+    return c.json({ error: "Failed to delete subscription" }, 500);
+  }
+});
+
+app.get("/subscriptions", async (c) => {
+  const apiKey = c.req.header("X-API-Key");
+
+  console.log(apiKey);
+  console.log(Bun.env.SUBSCRIPTION_API_KEY);
+
+
+  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  
+
+  // Get the verified JWT payload from the middleware
+  const jwtPayload = c.get("jwtPayload") as any;
+
+  if (!jwtPayload) {
+    return c.json({ error: "Invalid token: no payload found" }, 401);
+  }
+
+  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
+  const authenticatedUserId = jwtPayload.sub;
+
+  
+  if (!authenticatedUserId) {
+    return c.json({ error: "Invalid token: missing user ID" }, 401);
+  }
+  
+  
+
+  // Get email from query parameter
+  const email = c.req.query("email");
+
+  if (!email) {
+    return c.json({ error: "email query parameter is required" }, 400);
+  }
+
+  try {
+    // Fetch course subscriptions with course details only
+    const [courseSubscriptions] = (await pool.execute(
+      `SELECT 
+        course_subscriptions.id as subscription_id,
+        course_subscriptions.email,
+        course_subscriptions.course_id,
+        courses.course_title,
+        courses.course_designation,
+        courses.full_course_designation,
+        courses.course_uuid
+      FROM course_subscriptions
+      JOIN courses ON course_subscriptions.course_id = courses.course_id
+      WHERE course_subscriptions.email = ?
+      ORDER BY courses.course_title`,
+      [email]
+    )) as [any[], any];
+
+    // Fetch section subscriptions with course and specific section details
+    const [sectionSubscriptions] = (await pool.execute(
+      `SELECT 
+        section_subscriptions.id as subscription_id,
+        section_subscriptions.email,
+        section_subscriptions.section_id,
+        sections.unique_section_id,
+        sections.status as section_status,
+        sections.available_seats,
+        sections.instruction_mode,
+        courses.course_title,
+        courses.course_designation,
+        courses.full_course_designation,
+        courses.course_uuid,
+        section_meetings.section_number,
+        section_meetings.meeting_type
+      FROM section_subscriptions
+      JOIN sections ON section_subscriptions.section_id = sections.section_id
+      JOIN courses ON sections.course_uuid = courses.course_uuid
+      LEFT JOIN section_meetings ON sections.unique_section_id = section_meetings.unique_section_id
+      WHERE section_subscriptions.email = ?
+      ORDER BY courses.course_title, section_meetings.meeting_number`,
+      [email]
+    )) as [any[], any];
+
+
+    // Group section subscriptions by subscription_id
+    const groupedSectionSubscriptions = sectionSubscriptions.reduce((acc: any, row: any) => {
+      const key = row.subscription_id;
+      
+      if (!acc[key]) {
+        acc[key] = {
+          subscription_id: row.subscription_id,
+          email: row.email,
+          section_id: row.section_id,
+          created_at: row.created_at,
+          unique_section_id: row.unique_section_id,
+          section_status: row.section_status,
+          available_seats: row.available_seats,
+          instruction_mode: row.instruction_mode,
+          course_title: row.course_title,
+          course_designation: row.course_designation,
+          full_course_designation: row.full_course_designation,
+          course_uuid: row.course_uuid,
+          meetings: []
+        };
+      }
+
+      // Add meeting if it exists
+      if (row.section_number && row.meeting_type) {
+        const meetingLabel = `${row.meeting_type} ${row.section_number}`;
+        const meetingExists = acc[key].meetings.some((m: any) => m.label === meetingLabel);
+        
+        if (!meetingExists) {
+          acc[key].meetings.push({
+            label: meetingLabel,
+            section_number: row.section_number,
+            meeting_type: row.meeting_type,
+          });
+        }
+      }
+
+      return acc;
+    }, {});
+
+    return c.json({
+      course_subscriptions: courseSubscriptions,
+      section_subscriptions: Object.values(groupedSectionSubscriptions),
+    }, 200);
+  } catch (error: any) {
+    console.error("Database error:", error);
+    return c.json({ error: "Failed to fetch subscriptions" }, 500);
   }
 });
 
