@@ -14,10 +14,7 @@ if (!Bun.env.REDIS_URL) {
   process.exit(1);
 }
 //go to  REDIS_URL for prod and REDIS_PUBLIC_URL for dev
-const redis = new Redis(Bun.env.REDIS_URL || "redis://localhost:6379");
-
-
-
+const redis = new Redis(Bun.env.REDIS_URL);
 
 const app = new Hono();
 
@@ -603,6 +600,7 @@ app.get("/api/query", async (c) => {
         MAX(courses.workplace_experience_description) as workplace_experience_description,
         MAX(courses.open_to_first_year) as open_to_first_year,
         MAX(courses.repeatable_for_credit) as repeatable_for_credit,
+        MAX(courses.status) as status,
         MAX(ROUND(CAST(madgrades_course_grades.a_percentage as FLOAT), 2)) as a_percent,
         MAX(ROUND(CAST(madgrades_course_grades.ab_percentage as FLOAT), 2)) as ab_percent,
         MAX(ROUND(CAST(madgrades_course_grades.b_percentage as FLOAT), 2)) as b_percent,
