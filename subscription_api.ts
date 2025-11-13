@@ -1,7 +1,8 @@
-import { Hono } from "hono";
+import { Hono, Context } from "hono";
 import { cors } from "hono/cors";
 import { jwt } from "hono/jwt";
 import mysql from "mysql2/promise";
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const app = new Hono();
 
@@ -15,6 +16,58 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000", // for local dev
   "http://localhost:3001", // for local dev
 ];
+
+const sesClient = new SESClient({
+  region: Bun.env.AWS_REGION || "us-east-2",
+  credentials: {
+    accessKeyId: Bun.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: Bun.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+const FROM_EMAIL = Bun.env.SES_FROM_EMAIL;
+
+
+
+// Email helper function
+async function sendEmail(
+  to: string,
+  subject: string,
+  htmlBody: string
+): Promise<void> {
+  if (!FROM_EMAIL) {
+    throw new Error("SES_FROM_EMAIL not configured");
+  }
+
+  const command = new SendEmailCommand({
+    Source: FROM_EMAIL,
+    Destination: {
+      ToAddresses: [to],
+    },
+    Message: {
+      Subject: {
+        Data: subject,
+        Charset: "UTF-8",
+      },
+      Body: {
+        Html: {
+          Data: htmlBody,
+          Charset: "UTF-8",
+        },
+      },
+    },
+  });
+
+  try {
+    await sesClient.send(command);
+    console.log(`Email sent successfully to ${to}`);
+  } catch (error) {
+    console.error("Error sending email:", error);
+    throw error;
+  }
+}
+
+
 
 app.use(
   "/*",
@@ -56,6 +109,35 @@ pool
     process.exit(1);
   });
 
+// Authentication helper function
+// Validates API key and JWT token, returns either an error response or auth data
+interface AuthData {
+  userId: string;
+  jwtPayload: any;
+}
+
+function validateAuth(c: Context): Response | AuthData {
+  // Check API key
+  const apiKey = c.req.header("X-API-Key");
+  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  // Get and validate JWT payload
+  const jwtPayload = c.get("jwtPayload") as any;
+  if (!jwtPayload) {
+    return c.json({ error: "Invalid token: no payload found" }, 401);
+  }
+
+  // Extract and validate user ID
+  const userId = jwtPayload.sub;
+  if (!userId) {
+    return c.json({ error: "Invalid token: missing user ID" }, 401);
+  }
+
+  return { userId, jwtPayload };
+}
+
 // JWT middleware for Supabase token verification
 // This middleware will:
 // 1. Extract the Bearer token from the Authorization header
@@ -89,33 +171,17 @@ app.use(
 
 
 app.post("/course-subscription", async (c) => {
-  // Get the verified JWT payload from the middleware
-  // The JWT middleware automatically verifies the token and extracts the payload
-  // Hono's JWT middleware stores the payload in c.get('jwtPayload')
-
-  const apiKey = c.req.header("X-API-Key");
-
-  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
-    return c.json({ error: "Unauthorized" }, 401);
+  // Validate authentication
+  const authResult = validateAuth(c);
+  if (authResult instanceof Response) {
+    return authResult;
   }
-
-  const jwtPayload = c.get("jwtPayload") as any;
+  const { userId, jwtPayload } = authResult;
 
   console.log(jwtPayload);
 
-  if (!jwtPayload) {
-    return c.json({ error: "Invalid token: no payload found" }, 401);
-  }
-
-  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
-  const userId = jwtPayload.sub;
-
-  if (!userId) {
-    return c.json({ error: "Invalid token: missing user ID" }, 401);
-  }
-
-  // Get course_id and email from request body
-  const { course_id, email } = await c.req.json();
+  // Get course_id, email, and course details from request body
+  const { course_id, email, course_title } = await c.req.json();
 
   if (!course_id) {
     return c.json({ error: "course_id is required" }, 400);
@@ -144,6 +210,63 @@ app.post("/course-subscription", async (c) => {
       [email, course_id]
     );
 
+    // Send confirmation email
+    console.log('[COURSE EMAIL] Checking email conditions:', {
+      FROM_EMAIL: !!FROM_EMAIL,
+      course_title: !!course_title,
+      email: email
+    });
+    
+    if (FROM_EMAIL && course_title) {
+      console.log('[COURSE EMAIL] Attempting to send email to:', email);
+      try {
+        const htmlBody = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #C5050C; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .course-info { background-color: white; padding: 20px; margin: 20px 0; border-left: 4px solid #C5050C; }
+    .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Subscription Confirmed</h1>
+    </div>
+    <div class="content">
+      <p>Hello,</p>
+      <p>You've successfully subscribed to receive notifications for:</p>
+      <div class="course-info">
+        <h2>${course_title}</h2>
+      </div>
+      <p>You'll receive email notifications when this course has new openings or changes to availability.</p>
+      <p>Thank you for using BadgerBase!</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated message. Please do not reply to this email.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+        await sendEmail(
+          email,
+          `Subscription Confirmed: ${course_title}`,
+          htmlBody
+        );
+        console.log('[COURSE EMAIL] Email sent successfully to:', email);
+      } catch (emailError: any) {
+        console.error("[COURSE EMAIL] Failed to send confirmation email:", emailError?.message || emailError);
+      }
+    } else {
+      console.log('[COURSE EMAIL] Email NOT sent - missing required fields');
+    }
+
     return c.json({ message: "Subscription created successfully" }, 201);
   } catch (error: any) {
     console.error("Database error:", error);
@@ -152,28 +275,15 @@ app.post("/course-subscription", async (c) => {
 });
 
 app.delete("/course-subscription", async (c) => {
-  const apiKey = c.req.header("X-API-Key");
-
-  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
-    return c.json({ error: "Unauthorized" }, 401);
+  // Validate authentication
+  const authResult = validateAuth(c);
+  if (authResult instanceof Response) {
+    return authResult;
   }
-
-  // Get the verified JWT payload from the middleware
-  const jwtPayload = c.get("jwtPayload") as any;
-
-  if (!jwtPayload) {
-    return c.json({ error: "Invalid token: no payload found" }, 401);
-  }
-
-  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
-  const userId = jwtPayload.sub;
-
-  if (!userId) {
-    return c.json({ error: "Invalid token: missing user ID" }, 401);
-  }
+  const { userId, jwtPayload } = authResult;
 
   // Get course_id and email from request body
-  const { course_id, email } = await c.req.json();
+  const { course_id, course_title, email } = await c.req.json();
 
   if (!course_id) {
     return c.json({ error: "course_id is required" }, 400);
@@ -194,6 +304,7 @@ app.delete("/course-subscription", async (c) => {
       return c.json({ error: "Subscription not found" }, 404);
     }
 
+
     // Delete the subscription
     await pool.execute(
       "DELETE FROM course_subscriptions WHERE email = ? AND course_id = ?",
@@ -208,32 +319,15 @@ app.delete("/course-subscription", async (c) => {
 });
 
 app.post("/section-subscription", async (c) => {
-
-
-  const apiKey = c.req.header("X-API-Key");
-
-  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
-    return c.json({ error: "Unauthorized" }, 401);
+  // Validate authentication
+  const authResult = validateAuth(c);
+  if (authResult instanceof Response) {
+    return authResult;
   }
+  const { userId, jwtPayload } = authResult;
 
-  // Get the verified JWT payload from the middleware
-  // The JWT middleware automatically verifies the token and extracts the payload
-  // Hono's JWT middleware stores the payload in c.get('jwtPayload')
-  const jwtPayload = c.get("jwtPayload") as any;
-
-  if (!jwtPayload) {
-    return c.json({ error: "Invalid token: no payload found" }, 401);
-  }
-
-  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
-  const userId = jwtPayload.sub;
-
-  if (!userId) {
-    return c.json({ error: "Invalid token: missing user ID" }, 401);
-  }
-
-  // Get section_id and email from request body
-  const { section_id, email } = await c.req.json();
+  // Get section_id, email, and section details from request body
+  const { section_id, course_title, section_names, email } = await c.req.json();
 
   if (!section_id) {
     return c.json({ error: "section_id is required" }, 400);
@@ -262,37 +356,106 @@ app.post("/section-subscription", async (c) => {
       [email, section_id]
     );
 
+    // Send confirmation email
+    console.log('[SECTION EMAIL] Checking email conditions:', {
+      FROM_EMAIL: !!FROM_EMAIL,
+      FROM_EMAIL_value: FROM_EMAIL,
+      course_title: !!course_title,
+      course_title_value: course_title,
+      section_names: section_names,
+      section_names_isArray: Array.isArray(section_names),
+      section_names_length: Array.isArray(section_names) ? section_names.length : 'N/A',
+      section_id: section_id,
+      email: email
+    });
+    
+    if (FROM_EMAIL && course_title) {
+      console.log('[SECTION EMAIL] Sending email to:', email);
+      try {
+        // Handle section_names - use if available, otherwise show section_id
+        let sectionsDisplay = 'your selected section';
+        let sectionLabel = 'Section';
+        
+        if (section_names && Array.isArray(section_names) && section_names.length > 0) {
+          sectionsDisplay = section_names.join(', ');
+          sectionLabel = section_names.length > 1 ? 'Sections' : 'Section';
+        } else if (section_id) {
+          sectionsDisplay = `Section ID: ${section_id}`;
+        }
+
+        const htmlBody = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #C5050C; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .section-info { background-color: white; padding: 20px; margin: 20px 0; border-left: 4px solid #C5050C; }
+    .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Section Subscription Confirmed</h1>
+    </div>
+    <div class="content">
+      <p>Hello,</p>
+      <p>You've successfully subscribed to receive notifications for:</p>
+      <div class="section-info">
+        <h2>${course_title}</h2>
+        <p><strong>${sectionLabel}:</strong> ${sectionsDisplay}</p>
+      </div>
+      <p>You'll receive email notifications when this section has new openings or changes to availability.</p>
+      <p>Thank you for using BadgerBase!</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated message. Please do not reply to this email.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+        await sendEmail(
+          email,
+          `Section Subscription Confirmed: ${course_title}`,
+          htmlBody
+        );
+        console.log('[SECTION EMAIL] Email sent successfully to:', email);
+      } catch (emailError: any) {
+        console.error("[SECTION EMAIL] Failed to send confirmation email:", emailError?.message || emailError);
+      }
+    } else {
+      console.log('[SECTION EMAIL] Email NOT sent - missing FROM_EMAIL or course_title:', {
+        hasFromEmail: !!FROM_EMAIL,
+        hasCourseTitle: !!course_title
+      });
+    }
+
     return c.json({ message: "Subscription created successfully" }, 201);
   } catch (error: any) {
     console.error("Database error:", error);
     return c.json({ error: "Failed to create subscription" }, 500);
   }
+
+ 
+
+
+
 });
 
 app.delete("/section-subscription", async (c) => {
-  const apiKey = c.req.header("X-API-Key");
-
-  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
-    return c.json({ error: "Unauthorized" }, 401);
+  // Validate authentication
+  const authResult = validateAuth(c);
+  if (authResult instanceof Response) {
+    return authResult;
   }
-
-  
-  // Get the verified JWT payload from the middleware
-  const jwtPayload = c.get("jwtPayload") as any;
-
-  if (!jwtPayload) {
-    return c.json({ error: "Invalid token: no payload found" }, 401);
-  }
-
-  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
-  const userId = jwtPayload.sub;
-
-  if (!userId) {
-    return c.json({ error: "Invalid token: missing user ID" }, 401);
-  }
+  const { userId, jwtPayload } = authResult;
 
   // Get section_id and email from request body
-  const { section_id, email } = await c.req.json();
+  const { section_id, course_title, section_names, email } = await c.req.json();
 
   if (!section_id) {
     return c.json({ error: "section_id is required" }, 400);
@@ -327,33 +490,12 @@ app.delete("/section-subscription", async (c) => {
 });
 
 app.get("/subscriptions", async (c) => {
-  const apiKey = c.req.header("X-API-Key");
-
-  console.log(apiKey);
-  console.log(Bun.env.SUBSCRIPTION_API_KEY);
-
-
-  if (!apiKey || apiKey !== Bun.env.SUBSCRIPTION_API_KEY) {
-    return c.json({ error: "Unauthorized" }, 401);
+  // Validate authentication
+  const authResult = validateAuth(c);
+  if (authResult instanceof Response) {
+    return authResult;
   }
-  
-
-  // Get the verified JWT payload from the middleware
-  const jwtPayload = c.get("jwtPayload") as any;
-
-  if (!jwtPayload) {
-    return c.json({ error: "Invalid token: no payload found" }, 401);
-  }
-
-  // Supabase stores the user ID in the 'sub' (subject) field of the JWT
-  const authenticatedUserId = jwtPayload.sub;
-
-  
-  if (!authenticatedUserId) {
-    return c.json({ error: "Invalid token: missing user ID" }, 401);
-  }
-  
-  
+  const { userId: authenticatedUserId, jwtPayload } = authResult;
 
   // Get email from query parameter
   const email = c.req.query("email");
