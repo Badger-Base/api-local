@@ -2,7 +2,7 @@ import { Hono, Context } from "hono";
 import { cors } from "hono/cors";
 import { jwt } from "hono/jwt";
 import mysql from "mysql2/promise";
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+// import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const app = new Hono();
 
@@ -17,55 +17,103 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3001", // for local dev
 ];
 
-const sesClient = new SESClient({
-  region: Bun.env.AWS_REGION || "us-east-2",
-  credentials: {
-    accessKeyId: Bun.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: Bun.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
+// SES Client (commented out - now using ElasticEmail)
+// const sesClient = new SESClient({
+//   region: Bun.env.AWS_REGION || "us-east-2",
+//   credentials: {
+//     accessKeyId: Bun.env.AWS_ACCESS_KEY_ID!,
+//     secretAccessKey: Bun.env.AWS_SECRET_ACCESS_KEY!,
+//   },
+// });
 
-const FROM_EMAIL = Bun.env.SES_FROM_EMAIL;
+// ElasticEmail configuration
+const ELASTICEMAIL_API_KEY = Bun.env.ELASTICEMAIL_API_KEY;
+const FROM_EMAIL = Bun.env.FROM_EMAIL || Bun.env.SES_FROM_EMAIL; // Support both env vars for backward compatibility
 
 
 
-// Email helper function
+// Email helper function using ElasticEmail
 async function sendEmail(
   to: string,
   subject: string,
   htmlBody: string
 ): Promise<void> {
   if (!FROM_EMAIL) {
-    throw new Error("SES_FROM_EMAIL not configured");
+    throw new Error("FROM_EMAIL not configured");
   }
 
-  const command = new SendEmailCommand({
-    Source: FROM_EMAIL,
-    Destination: {
-      ToAddresses: [to],
-    },
-    Message: {
-      Subject: {
-        Data: subject,
-        Charset: "UTF-8",
-      },
-      Body: {
-        Html: {
-          Data: htmlBody,
-          Charset: "UTF-8",
-        },
-      },
-    },
-  });
+  if (!ELASTICEMAIL_API_KEY) {
+    throw new Error("ELASTICEMAIL_API_KEY not configured");
+  }
+
+  // Create form data for ElasticEmail API
+  const formData = new URLSearchParams();
+  formData.append('apikey', ELASTICEMAIL_API_KEY);
+  formData.append('from', FROM_EMAIL);
+  formData.append('to', to);
+  formData.append('subject', subject);
+  formData.append('bodyHtml', htmlBody);
+  formData.append('isTransactional', 'true');
 
   try {
-    await sesClient.send(command);
-    console.log(`Email sent successfully to ${to}`);
+    const response = await fetch('https://api.elasticemail.com/v2/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`ElasticEmail API error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log(`Email sent successfully to ${to}`, result);
   } catch (error) {
     console.error("Error sending email:", error);
     throw error;
   }
 }
+
+// SES Email function (commented out - now using ElasticEmail)
+// async function sendEmail(
+//   to: string,
+//   subject: string,
+//   htmlBody: string
+// ): Promise<void> {
+//   if (!FROM_EMAIL) {
+//     throw new Error("SES_FROM_EMAIL not configured");
+//   }
+//
+//   const command = new SendEmailCommand({
+//     Source: FROM_EMAIL,
+//     Destination: {
+//       ToAddresses: [to],
+//     },
+//     Message: {
+//       Subject: {
+//         Data: subject,
+//         Charset: "UTF-8",
+//       },
+//       Body: {
+//         Html: {
+//           Data: htmlBody,
+//           Charset: "UTF-8",
+//         },
+//       },
+//     },
+//   });
+//
+//   try {
+//     await sesClient.send(command);
+//     console.log(`Email sent successfully to ${to}`);
+//   } catch (error) {
+//     console.error("Error sending email:", error);
+//     throw error;
+//   }
+// }
 
 
 
