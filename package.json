@@ -1,0 +1,16 @@
+{
+  "name": "sconnie-grades-api",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "bun run api.js",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "ioredis": "^5.0.0",
+    "mysql2": "^3.0.0"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  }
+}

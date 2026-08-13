@@ -3,40 +3,15 @@ import { cors } from "hono/cors";
 import mysql from "mysql2/promise";
 import Redis from "ioredis";
 
-console.log("=== REDIS DEBUG ===");
-console.log("REDIS_URL:", Bun.env.REDIS_URL);
-console.log("URL length:", Bun.env.REDIS_URL?.length);
-console.log("URL type:", typeof Bun.env.REDIS_URL);
-console.log("=====================");
-
-if (!Bun.env.REDIS_URL) {
-  console.error("REDIS_URL is not set");
-  process.exit(1);
-}
-//go to  REDIS_URL for prod and REDIS_PUBLIC_URL for dev
-const redis = new Redis(Bun.env.REDIS_URL);
-
+export function createApp({ pool, redis, apiKey }) {
 const app = new Hono();
-
-// Create MySQL connection pool
-const pool = mysql.createPool({
-  uri: Bun.env.MYSQL_URL,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
-console.log("=== DATABASE DEBUG ===");
-console.log("MYSQL_URL:", Bun.env.MYSQL_URL);
-console.log("URL length:", Bun.env.MYSQL_URL?.length);
-console.log("URL type:", typeof Bun.env.MYSQL_URL);
-console.log("=====================");
 
 app.use("/*", cors());
 
 app.get("/api/courses", async (c) => {
-  const apiKey = c.req.header("x-api-key");
+  const reqApiKey = c.req.header("x-api-key");
 
-  if (!apiKey || apiKey !== Bun.env.GET_API_KEY) {
+  if (!reqApiKey || reqApiKey !== apiKey) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -50,18 +25,10 @@ app.get("/api/courses", async (c) => {
 });
 
 app.get("/api/query", async (c) => {
-  const apiKey = c.req.header("x-api-key");
+  const reqApiKey = c.req.header("x-api-key");
 
-  if (!apiKey || apiKey !== Bun.env.GET_API_KEY) {
-    return c.json(
-      {
-        error: "Unauthorized",
-        "received-key": apiKey,
-        "expected-key": Bun.env.GET_API_KEY,
-        "keys-match": apiKey === Bun.env.GET_API_KEY,
-      },
-      401
-    );
+  if (!reqApiKey || reqApiKey !== apiKey) {
+    return c.json({ error: "Unauthorized" }, 401);
   }
 
   
@@ -75,11 +42,8 @@ app.get("/api/query", async (c) => {
     // Try cache first
     const cached = await redis.get(cacheKey);
     if (cached) {
-      console.log("Cache hit for", cacheKey);
       return c.json(JSON.parse(cached));
     }
-
-    console.log("Cache miss for", cacheKey);
 
     // Get query parameters for filtering
     const {
@@ -322,18 +286,13 @@ app.get("/api/query", async (c) => {
     // Add day-specific time filters and collect them
     const dayFilters = [];
 
-    addDayTimeFilter('monday', mondayStartTime, mondayEndTime, 'Monday'); ``
+    addDayTimeFilter('monday', mondayStartTime, mondayEndTime, 'Monday');
     addDayTimeFilter('tuesday', tuesdayStartTime, tuesdayEndTime, 'Tuesday');
     addDayTimeFilter('wednesday', wednesdayStartTime, wednesdayEndTime, 'Wednesday');
     addDayTimeFilter('thursday', thursdayStartTime, thursdayEndTime, 'Thursday');
     addDayTimeFilter('friday', fridayStartTime, fridayEndTime, 'Friday');
 
 
-    console.log("Days with filters:", daysWithFilters);
-    console.log("Meeting filters:", meetingFilters);
-
-
-    console.log("Days with filters:", daysWithFilters);
     const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 
@@ -347,10 +306,6 @@ app.get("/api/query", async (c) => {
       });
 
     }
-
-
-
-    console.log("Meeting filters:", meetingFilters);
 
 
 
@@ -369,9 +324,6 @@ app.get("/api/query", async (c) => {
       ...courseFilters,
       ...rmpSectionFilters,
     ];
-
-    console.log("All filters:", allFilters);
-    console.log("Filter params:", filterParams);
 
     const limitValue = parseInt(limit) || 10;
 
@@ -554,11 +506,6 @@ app.get("/api/query", async (c) => {
       queryParams = [];
     }
 
-    console.log("=== DISTINCT COURSES QUERY ===");
-    console.log("SQL:", distinctCoursesSql);
-    console.log("Params:", queryParams);
-    console.log("===============================");
-
     const [courseUuids] = await pool.execute(distinctCoursesSql, queryParams);
 
     if (!Array.isArray(courseUuids) || courseUuids.length === 0) {
@@ -721,11 +668,6 @@ app.get("/api/query", async (c) => {
       courseUuidList
     );
 
-    console.log("=== SECTIONS WITH RMP AND MEETINGS RESULTS ===");
-    console.log("Total rows returned:", sectionsResults.length);
-    console.log("First few rows:", sectionsResults.slice(0, 3));
-    console.log("===============================================");
-
     // Group sections by course_uuid and section, including meetings - UPDATED to use course_uuid
     const sectionsByCourseUuid = {};
 
@@ -843,19 +785,6 @@ app.get("/api/query", async (c) => {
       };
     });
 
-    console.log("=== FINAL COURSES WITH SECTIONS AND MEETINGS ===");
-    console.log(`Total courses: ${coursesWithSections.length}`);
-    coursesWithSections.forEach((course) => {
-      console.log(
-        `Course ${course.course_uuid}: ${course.sections.length} sections`
-      );
-      course.sections.forEach((section) => {
-        console.log(
-          `  Section ${section.unique_section_id}: rating=${section.section_avg_rating}, ${section.meetings.length} meetings`
-        );
-      });
-    });
-
     // Cache the result
     try {
       await redis.set(cacheKey, JSON.stringify({
@@ -935,7 +864,28 @@ app.get("/health", async (c) => {
   }
 });
 
-Bun.serve({
-  port: Bun.env.PORT ?? 3000,
-  fetch: app.fetch,
-});
+return app;
+}
+
+// Run server when executed directly
+if (import.meta.main) {
+  if (!Bun.env.REDIS_URL) {
+    console.error("REDIS_URL is not set");
+    process.exit(1);
+  }
+
+  const redis = new Redis(Bun.env.REDIS_URL);
+  const pool = mysql.createPool({
+    uri: Bun.env.MYSQL_URL,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+  });
+
+  const app = createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY });
+
+  Bun.serve({
+    port: Bun.env.PORT ?? 3000,
+    fetch: app.fetch,
+  });
+}
