@@ -1,39 +1,11 @@
 import { describe, test, expect, beforeAll, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
 import { createSubscriptionApp } from "./subscription_api";
 import { sign } from "hono/jwt";
-
-// ─── Constants ─────────────────────────────────────────────────────
+import { setupDb } from "./test/db.js";
+import { fixture } from "./test/fixtures/subscription-default.js";
 
 const TEST_API_KEY = "test-sub-api-key";
 const JWT_SECRET = "test-jwt-secret-must-be-long-enough";
-
-// ─── SQLite pool adapter ───────────────────────────────────────────
-
-function createSqlitePool(db: Database) {
-  return {
-    execute(sql: string, params: any[] = []) {
-      let rewritten = sql
-        .replace(/CAST\(([^)]+)\s+AS\s+UNSIGNED\)/gi, "CAST($1 AS INTEGER)")
-        .replace(/CAST\(([^)]+)\s+as\s+FLOAT\)/gi, "CAST($1 as REAL)")
-        .replace(/CAST\(([^)]+)\s+AS\s+FLOAT\)/gi, "CAST($1 AS REAL)");
-
-      const trimmed = rewritten.trimStart().toUpperCase();
-      const isSelect =
-        trimmed.startsWith("SELECT") || trimmed.startsWith("WITH");
-
-      if (isSelect) {
-        const stmt = db.prepare(rewritten);
-        const rows = stmt.all(...params);
-        return Promise.resolve([rows, []]);
-      } else {
-        const stmt = db.prepare(rewritten);
-        const result = stmt.run(...params);
-        return Promise.resolve([{ affectedRows: result.changes }, []]);
-      }
-    },
-  };
-}
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -57,7 +29,6 @@ function authHeaders(token: string) {
   };
 }
 
-// For auth tests that don't need SQLite
 function createMockPool() {
   return {
     execute: () => Promise.resolve([[], []]),
@@ -74,8 +45,8 @@ function makeAuthApp() {
 
 // ─── Database setup ────────────────────────────────────────────────
 
-let db: Database;
-let sqlitePool: ReturnType<typeof createSqlitePool>;
+const testDb = setupDb();
+const { db, pool: sqlitePool } = testDb;
 
 function makeApp(sendEmail?: any) {
   return createSubscriptionApp({
@@ -88,77 +59,7 @@ function makeApp(sendEmail?: any) {
 }
 
 beforeAll(() => {
-  db = new Database(":memory:");
-
-  db.exec(`
-    CREATE TABLE course_subscriptions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL,
-      course_id TEXT NOT NULL
-    );
-
-    CREATE TABLE section_subscriptions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL,
-      section_id TEXT NOT NULL
-    );
-
-    CREATE TABLE courses (
-      course_id TEXT PRIMARY KEY,
-      course_uuid TEXT NOT NULL,
-      course_title TEXT,
-      course_designation TEXT,
-      full_course_designation TEXT,
-      subject_code TEXT
-    );
-
-    CREATE TABLE sections (
-      section_id TEXT PRIMARY KEY,
-      unique_section_id TEXT UNIQUE,
-      course_uuid TEXT NOT NULL,
-      status TEXT,
-      available_seats INTEGER,
-      instruction_mode TEXT
-    );
-
-    CREATE TABLE section_meetings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      unique_section_id TEXT NOT NULL,
-      section_number TEXT,
-      meeting_type TEXT,
-      meeting_number INTEGER
-    );
-  `);
-
-  // Seed courses
-  const insertCourse = db.prepare(
-    "INSERT INTO courses (course_id, course_uuid, course_title, course_designation, full_course_designation, subject_code) VALUES (?, ?, ?, ?, ?, ?)"
-  );
-  insertCourse.run("CS101", "uuid-1", "Intro to CS", "COMP SCI 101", "COMP SCI 101", "COMP SCI");
-  insertCourse.run("MATH221", "uuid-2", "Calculus I", "MATH 221", "MATH 221", "MATH");
-  insertCourse.run("PSYCH202", "uuid-3", "Intro Psychology", "PSYCH 202", "PSYCH 202", "PSYCH");
-
-  // Seed sections
-  const insertSection = db.prepare(
-    "INSERT INTO sections (section_id, unique_section_id, course_uuid, status, available_seats, instruction_mode) VALUES (?, ?, ?, ?, ?, ?)"
-  );
-  insertSection.run("sec-1", "usec-1", "uuid-1", "OPEN", 30, "In Person");
-  insertSection.run("sec-2", "usec-2", "uuid-1", "WAITLISTED", 0, "In Person");
-  insertSection.run("sec-3", "usec-3", "uuid-2", "OPEN", 15, "In Person");
-  insertSection.run("sec-4", "usec-4", "uuid-3", "OPEN", 20, "Online"); // no meetings
-
-  // Seed meetings
-  const insertMeeting = db.prepare(
-    "INSERT INTO section_meetings (unique_section_id, section_number, meeting_type, meeting_number) VALUES (?, ?, ?, ?)"
-  );
-  insertMeeting.run("usec-1", "001", "LEC", 1);
-  insertMeeting.run("usec-1", "301", "DIS", 2);
-  insertMeeting.run("usec-2", "002", "LEC", 1);
-  // usec-3 gets a meeting
-  insertMeeting.run("usec-3", "001", "LEC", 1);
-  // usec-4 has no meetings (async/online)
-
-  sqlitePool = createSqlitePool(db);
+  testDb.seed(fixture);
 });
 
 beforeEach(() => {
