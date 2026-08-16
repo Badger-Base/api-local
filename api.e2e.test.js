@@ -157,6 +157,11 @@ describe("level filter", () => {
     const body = await query({ level: "Advanced" });
     expect(uuids(body)).toEqual(["uuid-c8", "uuid-c9"].sort());
   });
+
+  it("level=Advanced,Intermediate returns union of both", async () => {
+    const body = await query({ level: "Advanced,Intermediate" });
+    expect(uuids(body)).toEqual(["uuid-c1", "uuid-c6", "uuid-c8", "uuid-c9", "uuid-c11"].sort());
+  });
 });
 
 // ─── Prerequisite filters ──────────────────────────────────────────

@@ -42,7 +42,7 @@ When used together, `min_credits=2&max_credits=4` returns courses whose credit r
 
 ### `level`
 
-Exact match on course level. Values: `Elementary`, `Intermediate`, `Advanced`, `Basic`.
+Course level filter. Values: `Elementary`, `Intermediate`, `Advanced`, `Basic`. Comma-separated values combine with OR: `level=Advanced,Intermediate` returns courses at either level.
 
 ### `gen_ed`
 

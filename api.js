@@ -195,8 +195,15 @@ app.get("/api/query", async (c) => {
     }
 
     if (level) {
-      courseFilters.push("courses.level = ?");
-      filterParams.push(level);
+      const levelList = level.split(",").map((l) => l.trim());
+      if (levelList.length === 1) {
+        courseFilters.push("courses.level = ?");
+        filterParams.push(levelList[0]);
+      } else {
+        const placeholders = levelList.map(() => "?").join(",");
+        courseFilters.push(`courses.level IN (${placeholders})`);
+        filterParams.push(...levelList);
+      }
     }
     if (gen_ed) {
       courseFilters.push("courses.general_education = ?");
