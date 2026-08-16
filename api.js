@@ -128,35 +128,18 @@ app.get("/api/query", async (c) => {
     };
 
     if (status) {
+      // courses.status is a pre-computed course-level field: 0=closed, 1=waitlisted, 2=open
+      const STATUS_MAP = { CLOSED: 0, WAITLISTED: 1, OPEN: 2 };
       const statusList = status.split(",").map((s) => s.trim().toUpperCase());
-      const hasClosed = statusList.includes("CLOSED");
-      const existsStatuses = statusList.filter((s) => s !== "CLOSED");
+      const statusInts = statusList.map((s) => STATUS_MAP[s]).filter((v) => v !== undefined);
 
-      const statusConditions = [];
-
-      // OPEN/WAITLISTED: course has at least one section with that status
-      if (existsStatuses.length === 1) {
-        statusConditions.push("sections.status = ?");
-        filterParams.push(existsStatuses[0]);
-      } else if (existsStatuses.length > 1) {
-        const placeholders = existsStatuses.map(() => "?").join(",");
-        statusConditions.push(`sections.status IN (${placeholders})`);
-        filterParams.push(...existsStatuses);
-      }
-
-      // CLOSED: every section of the course is closed (no open/waitlisted sections)
-      if (hasClosed) {
-        statusConditions.push(`NOT EXISTS (
-          SELECT 1 FROM sections s_closed
-          WHERE s_closed.course_uuid = courses.course_uuid
-          AND s_closed.status != 'CLOSED'
-        )`);
-      }
-
-      if (statusConditions.length === 1) {
-        sectionFilters.push(statusConditions[0]);
-      } else {
-        sectionFilters.push(`(${statusConditions.join(" OR ")})`);
+      if (statusInts.length === 1) {
+        courseFilters.push("courses.status = ?");
+        filterParams.push(statusInts[0]);
+      } else if (statusInts.length > 1) {
+        const placeholders = statusInts.map(() => "?").join(",");
+        courseFilters.push(`courses.status IN (${placeholders})`);
+        filterParams.push(...statusInts);
       }
     }
 

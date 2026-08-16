@@ -76,11 +76,9 @@ describe("status filter", () => {
     expect(uuids(body)).toEqual(["uuid-c3"]);
   });
 
-  it("status=WAITLISTED returns c1 and c4", async () => {
+  it("status=WAITLISTED returns only c4", async () => {
     const body = await query({ status: "WAITLISTED" });
-    const ids = uuids(body);
-    expect(ids).toContain("uuid-c1");
-    expect(ids).toContain("uuid-c4");
+    expect(uuids(body)).toEqual(["uuid-c4"]);
   });
 
   it("status=OPEN returns all sections of matching courses (course-level filter)", async () => {

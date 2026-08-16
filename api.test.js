@@ -240,7 +240,7 @@ describe("GET /api/query", () => {
     expect(body.data[0].sections[0].meetings).toHaveLength(1);
   });
 
-  it("applies status filter", async () => {
+  it("status filter uses courses.status integer field", async () => {
     let capturedSql = "";
     let capturedParams = [];
     const app = makeApp({
@@ -256,15 +256,15 @@ describe("GET /api/query", () => {
       headers: { "x-api-key": TEST_API_KEY },
     });
 
-    expect(capturedSql).toContain("sections.status = ?");
-    expect(capturedParams).toContain("OPEN");
+    expect(capturedSql).toContain("courses.status = ?");
+    expect(capturedParams).toContain(2); // OPEN = 2
   });
 
-  it("status=CLOSED uses NOT EXISTS to find fully-closed courses", async () => {
-    let capturedSql = "";
+  it("status=CLOSED maps to courses.status = 0", async () => {
+    let capturedParams = [];
     const app = makeApp({
-      execute: (sql) => {
-        capturedSql += sql;
+      execute: (sql, params) => {
+        if (params) capturedParams.push(...params);
         if (sql.includes("COUNT")) return Promise.resolve([[{ total: 0 }]]);
         return Promise.resolve([[]]);
       },
@@ -274,12 +274,10 @@ describe("GET /api/query", () => {
       headers: { "x-api-key": TEST_API_KEY },
     });
 
-    expect(capturedSql).toContain("NOT EXISTS");
-    expect(capturedSql).toContain("s_closed.status != 'CLOSED'");
-    expect(capturedSql).not.toContain("sections.status = ?");
+    expect(capturedParams).toContain(0); // CLOSED = 0
   });
 
-  it("status=OPEN,CLOSED combines exists and NOT EXISTS with OR", async () => {
+  it("multiple statuses use IN clause with integer values", async () => {
     let capturedSql = "";
     let capturedParams = [];
     const app = makeApp({
@@ -291,30 +289,13 @@ describe("GET /api/query", () => {
       },
     });
 
-    await app.request(queryRequest({ status: "OPEN,CLOSED" }), {
-      headers: { "x-api-key": TEST_API_KEY },
-    });
-
-    expect(capturedSql).toContain("sections.status = ?");
-    expect(capturedSql).toContain("NOT EXISTS");
-    expect(capturedParams).toContain("OPEN");
-  });
-
-  it("applies multiple status filters with IN clause", async () => {
-    let capturedSql = "";
-    const app = makeApp({
-      execute: (sql) => {
-        capturedSql += sql;
-        if (sql.includes("COUNT")) return Promise.resolve([[{ total: 0 }]]);
-        return Promise.resolve([[]]);
-      },
-    });
-
     await app.request(queryRequest({ status: "OPEN,WAITLISTED" }), {
       headers: { "x-api-key": TEST_API_KEY },
     });
 
-    expect(capturedSql).toContain("sections.status IN");
+    expect(capturedSql).toContain("courses.status IN");
+    expect(capturedParams).toContain(2); // OPEN
+    expect(capturedParams).toContain(1); // WAITLISTED
   });
 
   it("applies credit range filters", async () => {

@@ -16,6 +16,8 @@ All parameters are query string parameters. All are optional. Results are pagina
 
 Comma-separated values combine with OR logic: `status=OPEN,WAITLISTED` returns courses that have at least one open OR at least one waitlisted section. `status=OPEN,CLOSED` returns courses that are either open or fully closed.
 
+Internally, status is a pre-computed integer on the `courses` table (`0`=closed, `1`=waitlisted, `2`=open). The API maps string values to these integers and filters on `courses.status`, so there is no per-section subquery — it's a single column check.
+
 Note the asymmetry: OPEN and WAITLISTED use "at least one section matches" logic, while CLOSED uses "all sections match" logic. A course with 3 OPEN sections and 1 CLOSED section matches `status=OPEN` but NOT `status=CLOSED`.
 
 ### `min_available_seats`
@@ -42,7 +44,7 @@ When used together, `min_credits=2&max_credits=4` returns courses whose credit r
 
 ### `level`
 
-Course level filter. Values: `Elementary`, `Intermediate`, `Advanced`, `Basic`. Comma-separated values combine with OR: `level=Advanced,Intermediate` returns courses at either level.
+Course level filter. Values: `Elementary`, `Intermediate`, `Advanced`. Comma-separated values combine with OR: `level=Advanced,Intermediate` returns courses at either level.
 
 ### `gen_ed`
 
