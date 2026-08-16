@@ -128,16 +128,18 @@ app.get("/api/query", async (c) => {
     };
 
     if (status) {
-      // Handle multiple statuses separated by commas
+      // courses.status is a pre-computed course-level field: 0=closed, 1=waitlisted, 2=open
+      const STATUS_MAP = { CLOSED: 0, WAITLISTED: 1, OPEN: 2 };
       const statusList = status.split(",").map((s) => s.trim().toUpperCase());
-      if (statusList.length === 1) {
-        sectionFilters.push("sections.status = ?");
-        filterParams.push(statusList[0]);
-      } else {
-        // Multiple statuses - use IN clause
-        const statusPlaceholders = statusList.map(() => "?").join(",");
-        sectionFilters.push(`sections.status IN (${statusPlaceholders})`);
-        filterParams.push(...statusList);
+      const statusInts = statusList.map((s) => STATUS_MAP[s]).filter((v) => v !== undefined);
+
+      if (statusInts.length === 1) {
+        courseFilters.push("courses.status = ?");
+        filterParams.push(statusInts[0]);
+      } else if (statusInts.length > 1) {
+        const placeholders = statusInts.map(() => "?").join(",");
+        courseFilters.push(`courses.status IN (${placeholders})`);
+        filterParams.push(...statusInts);
       }
     }
 
@@ -176,8 +178,15 @@ app.get("/api/query", async (c) => {
     }
 
     if (level) {
-      courseFilters.push("courses.level = ?");
-      filterParams.push(level);
+      const levelList = level.split(",").map((l) => l.trim());
+      if (levelList.length === 1) {
+        courseFilters.push("courses.level = ?");
+        filterParams.push(levelList[0]);
+      } else {
+        const placeholders = levelList.map(() => "?").join(",");
+        courseFilters.push(`courses.level IN (${placeholders})`);
+        filterParams.push(...levelList);
+      }
     }
     if (gen_ed) {
       courseFilters.push("courses.general_education = ?");

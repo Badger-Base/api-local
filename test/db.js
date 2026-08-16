@@ -52,7 +52,7 @@ const SCHEMA = `
     social_science TEXT, humanities TEXT, biological_science TEXT,
     physical_science TEXT, natural_science TEXT, literature TEXT,
     typically_offered TEXT, workplace_experience_description TEXT,
-    open_to_first_year TEXT, repeatable_for_credit TEXT, status TEXT
+    open_to_first_year TEXT, repeatable_for_credit TEXT, status INTEGER
   );
   CREATE TABLE sections (
     section_id TEXT PRIMARY KEY, unique_section_id TEXT UNIQUE,
@@ -124,7 +124,7 @@ export function setupDb() {
           c.level ?? null, c.genEd ?? null, c.prereq ?? null,
           c.ls ?? null, null, c.ethnic ?? null, c.social ?? null,
           c.hum ?? null, c.bio ?? null, c.phys ?? null, c.nat ?? null,
-          c.lit ?? null, null, null, null, null, null
+          c.lit ?? null, null, null, null, null, c.courseStatus ?? null
         );
       }
 
