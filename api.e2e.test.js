@@ -393,6 +393,107 @@ describe("available seats filter", () => {
   });
 });
 
+// ─── Schedule availability filter ─────────────────────────────────
+
+describe("schedule availability filter", () => {
+  it("MWF availability returns only courses with MWF-compatible sections", async () => {
+    const body = await query({
+      mondayStartTime: String(T(8, 0)),
+      mondayEndTime: String(T(17, 0)),
+      wednesdayStartTime: String(T(8, 0)),
+      wednesdayEndTime: String(T(17, 0)),
+      fridayStartTime: String(T(8, 0)),
+      fridayEndTime: String(T(17, 0)),
+    });
+    const ids = uuids(body);
+    // MWF sections: c1-001, c2, c4, c6, c8, c10 all fit within 8am-5pm
+    // c11 online section has no meeting times → passes
+    // c11-301 (F only 2pm) fits within Friday window → passes
+    // TR-only courses excluded (meet on unfiltered Tue/Thu)
+    expect(ids).toEqual(["uuid-c1", "uuid-c10", "uuid-c11", "uuid-c2", "uuid-c4", "uuid-c6", "uuid-c8"].sort());
+    expect(ids).not.toContain("uuid-c3");  // TR only
+    expect(ids).not.toContain("uuid-c5");  // TR only
+    expect(ids).not.toContain("uuid-c7");  // TR only
+    expect(ids).not.toContain("uuid-c9");  // TR only
+    expect(ids).not.toContain("uuid-c12"); // TR only
+  });
+
+  it("TR availability returns only courses with TR-compatible sections", async () => {
+    const body = await query({
+      tuesdayStartTime: String(T(8, 0)),
+      tuesdayEndTime: String(T(17, 0)),
+      thursdayStartTime: String(T(8, 0)),
+      thursdayEndTime: String(T(17, 0)),
+    });
+    const ids = uuids(body);
+    // TR sections: c1-002, c3, c5, c7, c9, c12 fit
+    // c11 online section passes (no meetings)
+    // MWF-only courses excluded (meet on unfiltered Mon/Wed/Fri)
+    expect(ids).toEqual(["uuid-c1", "uuid-c11", "uuid-c12", "uuid-c3", "uuid-c5", "uuid-c7", "uuid-c9"].sort());
+    expect(ids).not.toContain("uuid-c2");  // MWF only
+    expect(ids).not.toContain("uuid-c4");  // MWF only
+    expect(ids).not.toContain("uuid-c6");  // MWF only
+    expect(ids).not.toContain("uuid-c8");  // MWF only
+    expect(ids).not.toContain("uuid-c10"); // MWF only
+  });
+
+  it("narrow MWF window filters out courses outside the time range", async () => {
+    const body = await query({
+      mondayStartTime: String(T(9, 0)),
+      mondayEndTime: String(T(12, 0)),
+      wednesdayStartTime: String(T(9, 0)),
+      wednesdayEndTime: String(T(12, 0)),
+      fridayStartTime: String(T(9, 0)),
+      fridayEndTime: String(T(12, 0)),
+    });
+    const ids = uuids(body);
+    // MWF 9am-12pm:
+    // c1-001 (9:00-9:50) fits ✓
+    // c4-001 (11:00-11:50) fits ✓
+    // c8-001 (10:00-10:50) fits ✓
+    // c2-001 (1:00-1:50) ends after 12pm ✗
+    // c6-001 (2:00-2:50) ends after 12pm ✗
+    // c10-001 (3:00-3:50) ends after 12pm ✗
+    // c11-001 (online, no meetings) passes ✓
+    // c11-301 (F 2:00-2:50) ends after 12pm ✗ — but c11 still passes via online section
+    expect(ids).toEqual(["uuid-c1", "uuid-c11", "uuid-c4", "uuid-c8"].sort());
+  });
+
+  it("returns all sections of matching courses (course-level filter)", async () => {
+    const body = await query({
+      mondayStartTime: String(T(8, 0)),
+      mondayEndTime: String(T(17, 0)),
+      wednesdayStartTime: String(T(8, 0)),
+      wednesdayEndTime: String(T(17, 0)),
+      fridayStartTime: String(T(8, 0)),
+      fridayEndTime: String(T(17, 0)),
+      search_param: "Data Structures",
+    });
+    expect(body.data).toHaveLength(1);
+    const course = body.data[0];
+    expect(course.course_uuid).toBe("uuid-c1");
+    // Both sections returned even though only MWF section fits the schedule
+    expect(course.sections).toHaveLength(2);
+    expect(course.sections.map(s => s.status).sort()).toEqual(["OPEN", "WAITLISTED"]);
+  });
+
+  it("schedule + status filters combine with AND", async () => {
+    const body = await query({
+      mondayStartTime: String(T(8, 0)),
+      mondayEndTime: String(T(17, 0)),
+      wednesdayStartTime: String(T(8, 0)),
+      wednesdayEndTime: String(T(17, 0)),
+      fridayStartTime: String(T(8, 0)),
+      fridayEndTime: String(T(17, 0)),
+      status: "OPEN",
+    });
+    const ids = uuids(body);
+    // MWF courses with status=OPEN (excludes c4 which is WAITLISTED)
+    expect(ids).toEqual(["uuid-c1", "uuid-c10", "uuid-c11", "uuid-c2", "uuid-c6", "uuid-c8"].sort());
+    expect(ids).not.toContain("uuid-c4"); // WAITLISTED
+  });
+});
+
 // ─── Sorting ───────────────────────────────────────────────────────
 
 describe("sorting", () => {
