@@ -2,7 +2,7 @@
   "name": "sconnie-grades-api",
   "version": "1.0.0",
   "scripts": {
-    "start": "bun run api.js",
+    "start": "bun run server.ts",
     "test": "bun test"
   },
   "dependencies": {

@@ -1,20 +1,12 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
-import mysql from "mysql2/promise";
-import Redis from "ioredis";
+import { apiKeyAuth } from "./middleware.ts";
 
 export function createApp({ pool, redis, apiKey }) {
 const app = new Hono();
 
-app.use("/*", cors());
+app.use("/api/*", apiKeyAuth(apiKey));
 
 app.get("/api/courses", async (c) => {
-  const reqApiKey = c.req.header("x-api-key");
-
-  if (!reqApiKey || reqApiKey !== apiKey) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
   try {
     const [courses] = await pool.execute("SELECT * FROM courses LIMIT 10");
     return c.json({ data: courses });
@@ -25,11 +17,6 @@ app.get("/api/courses", async (c) => {
 });
 
 app.get("/api/query", async (c) => {
-  const reqApiKey = c.req.header("x-api-key");
-
-  if (!reqApiKey || reqApiKey !== apiKey) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
 
   
   try {
@@ -867,25 +854,3 @@ app.get("/health", async (c) => {
 return app;
 }
 
-// Run server when executed directly
-if (import.meta.main) {
-  if (!Bun.env.REDIS_URL) {
-    console.error("REDIS_URL is not set");
-    process.exit(1);
-  }
-
-  const redis = new Redis(Bun.env.REDIS_URL);
-  const pool = mysql.createPool({
-    uri: Bun.env.MYSQL_URL,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-  });
-
-  const app = createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY });
-
-  Bun.serve({
-    port: Bun.env.PORT ?? 3000,
-    fetch: app.fetch,
-  });
-}

@@ -1,16 +1,6 @@
 import { Hono, Context } from "hono";
-import { cors } from "hono/cors";
 import { jwt } from "hono/jwt";
-import mysql from "mysql2/promise";
-
-const ALLOWED_ORIGINS = [
-  "https://sconniegrades.com",
-  "https://www.sconniegrades.com",
-  "https://badgerbase.app",
-  "https://www.badgerbase.app",
-  "http://localhost:3000",
-  "http://localhost:3001",
-];
+import { apiKeyAuth } from "./middleware.ts";
 
 interface AuthData {
   userId: string;
@@ -34,52 +24,23 @@ export function createSubscriptionApp({
 }: SubscriptionAppDeps) {
   const app = new Hono();
 
-  app.use(
-    "/*",
-    cors({
-      origin: ALLOWED_ORIGINS,
-      credentials: true,
-    })
-  );
-
-  function validateAuth(c: Context): Response | AuthData {
-    const apiKey = c.req.header("X-API-Key");
-    if (!apiKey || apiKey !== subscriptionApiKey) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
+  function getAuthPayload(c: Context): Response | AuthData {
     const jwtPayload = c.get("jwtPayload") as any;
-    if (!jwtPayload) {
-      return c.json({ error: "Invalid token: no payload found" }, 401);
-    }
-
-    const userId = jwtPayload.sub;
-    if (!userId) {
+    if (!jwtPayload?.sub) {
       return c.json({ error: "Invalid token: missing user ID" }, 401);
     }
-
-    return { userId, jwtPayload };
+    return { userId: jwtPayload.sub, jwtPayload };
   }
 
-  app.use(
-    "/course-subscription",
-    jwt({ secret: jwtSecret })
-  );
-
-  app.use(
-    "/section-subscription",
-    jwt({ secret: jwtSecret })
-  );
-
-  app.use(
-    "/subscriptions",
-    jwt({ secret: jwtSecret })
-  );
+  for (const path of ["/course-subscription", "/section-subscription", "/subscriptions"]) {
+    app.use(path, apiKeyAuth(subscriptionApiKey));
+    app.use(path, jwt({ secret: jwtSecret }));
+  }
 
   // ─── Course Subscriptions ───────────────────────────────────────
 
   app.post("/course-subscription", async (c) => {
-    const authResult = validateAuth(c);
+    const authResult = getAuthPayload(c);
     if (authResult instanceof Response) return authResult;
     const { jwtPayload } = authResult;
 
@@ -125,7 +86,7 @@ export function createSubscriptionApp({
   });
 
   app.delete("/course-subscription", async (c) => {
-    const authResult = validateAuth(c);
+    const authResult = getAuthPayload(c);
     if (authResult instanceof Response) return authResult;
 
     const { course_id, email } = await c.req.json();
@@ -162,7 +123,7 @@ export function createSubscriptionApp({
   // ─── Section Subscriptions ──────────────────────────────────────
 
   app.post("/section-subscription", async (c) => {
-    const authResult = validateAuth(c);
+    const authResult = getAuthPayload(c);
     if (authResult instanceof Response) return authResult;
     const { jwtPayload } = authResult;
 
@@ -208,7 +169,7 @@ export function createSubscriptionApp({
   });
 
   app.delete("/section-subscription", async (c) => {
-    const authResult = validateAuth(c);
+    const authResult = getAuthPayload(c);
     if (authResult instanceof Response) return authResult;
 
     const { section_id, email } = await c.req.json();
@@ -245,7 +206,7 @@ export function createSubscriptionApp({
   // ─── List Subscriptions ─────────────────────────────────────────
 
   app.get("/subscriptions", async (c) => {
-    const authResult = validateAuth(c);
+    const authResult = getAuthPayload(c);
     if (authResult instanceof Response) return authResult;
 
     const email = c.req.query("email");
@@ -418,7 +379,7 @@ function buildSectionEmailHtml(
 
 // ─── ElasticEmail sender ──────────────────────────────────────────
 
-async function elasticEmailSender(
+export async function elasticEmailSender(
   fromEmail: string,
   apiKey: string,
   to: string,
@@ -445,49 +406,3 @@ async function elasticEmailSender(
   }
 }
 
-// ─── Production startup ───────────────────────────────────────────
-
-if (import.meta.main) {
-  const supabaseJwtSecret = Bun.env.SUPABASE_JWT_SECRET;
-  if (!supabaseJwtSecret) {
-    console.error("SUPABASE_JWT_SECRET is not set");
-    process.exit(1);
-  }
-
-  const pool = mysql.createPool({
-    uri: Bun.env.MYSQL_URL,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-  });
-
-  const emailFromAddr = Bun.env.FROM_EMAIL || Bun.env.SES_FROM_EMAIL;
-  const elasticApiKey = Bun.env.ELASTICEMAIL_API_KEY;
-
-  const emailSender =
-    emailFromAddr && elasticApiKey
-      ? (to: string, subject: string, html: string) =>
-          elasticEmailSender(emailFromAddr, elasticApiKey, to, subject, html)
-      : undefined;
-
-  const app = createSubscriptionApp({
-    pool,
-    jwtSecret: supabaseJwtSecret,
-    subscriptionApiKey: Bun.env.SUBSCRIPTION_API_KEY || "",
-    sendEmail: emailSender,
-    fromEmail: emailFromAddr,
-  });
-
-  const port = parseInt(Bun.env.PORT || "3000");
-  Bun.serve({ port, fetch: app.fetch });
-  console.log(`Subscription API running on port ${port}`);
-
-  process.on("SIGINT", async () => {
-    await pool.end();
-    process.exit(0);
-  });
-  process.on("SIGTERM", async () => {
-    await pool.end();
-    process.exit(0);
-  });
-}
