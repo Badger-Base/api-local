@@ -83,6 +83,23 @@ describe("status filter", () => {
     expect(ids).toContain("uuid-c4");
   });
 
+  it("status=OPEN returns all sections of matching courses (course-level filter)", async () => {
+    const body = await query({ status: "OPEN", search_param: "Data Structures" });
+    expect(body.data).toHaveLength(1);
+    const course = body.data[0];
+    expect(course.course_uuid).toBe("uuid-c1");
+    expect(course.sections).toHaveLength(2);
+  });
+
+  it("status=CLOSED excludes courses that have any non-CLOSED section", async () => {
+    const body = await query({ status: "CLOSED" });
+    expect(uuids(body)).toEqual(["uuid-c3"]);
+    const course = body.data[0];
+    course.sections.forEach((s) => {
+      expect(s.status).toBe("CLOSED");
+    });
+  });
+
   it("status=OPEN,WAITLISTED returns all except c3", async () => {
     const body = await query({ status: "OPEN,WAITLISTED" });
     const ids = uuids(body);

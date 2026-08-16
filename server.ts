@@ -6,15 +6,21 @@ import { createApp } from "./api.js";
 import { createSubscriptionApp, elasticEmailSender } from "./subscription_api.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
 
-const jwtSecret = Bun.env.SUPABASE_JWT_SECRET;
-if (!jwtSecret) {
-  console.error("SUPABASE_JWT_SECRET is not set");
-  process.exit(1);
+const required = [
+  "SUPABASE_JWT_SECRET",
+  "REDIS_URL",
+  "MYSQL_URL",
+  "GET_API_KEY",
+  "SUBSCRIPTION_API_KEY",
+] as const;
+for (const key of required) {
+  if (!Bun.env[key]) {
+    console.error(`${key} is not set`);
+    process.exit(1);
+  }
 }
-if (!Bun.env.REDIS_URL) {
-  console.error("REDIS_URL is not set");
-  process.exit(1);
-}
+
+const jwtSecret = Bun.env.SUPABASE_JWT_SECRET!;
 
 const pool = mysql.createPool({
   uri: Bun.env.MYSQL_URL,
@@ -37,6 +43,8 @@ const app = new Hono();
 
 app.use("/*", cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 
+app.get("/health", (c) => c.json({ status: "ok" }));
+
 app.route(
   "/",
   createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY })
@@ -58,10 +66,10 @@ Bun.serve({ port, fetch: app.fetch });
 console.log(`BadgerBase API running on port ${port}`);
 
 process.on("SIGINT", async () => {
-  await pool.end();
+  await Promise.all([pool.end(), redis.quit()]);
   process.exit(0);
 });
 process.on("SIGTERM", async () => {
-  await pool.end();
+  await Promise.all([pool.end(), redis.quit()]);
   process.exit(0);
 });

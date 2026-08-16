@@ -128,16 +128,35 @@ app.get("/api/query", async (c) => {
     };
 
     if (status) {
-      // Handle multiple statuses separated by commas
       const statusList = status.split(",").map((s) => s.trim().toUpperCase());
-      if (statusList.length === 1) {
-        sectionFilters.push("sections.status = ?");
-        filterParams.push(statusList[0]);
+      const hasClosed = statusList.includes("CLOSED");
+      const existsStatuses = statusList.filter((s) => s !== "CLOSED");
+
+      const statusConditions = [];
+
+      // OPEN/WAITLISTED: course has at least one section with that status
+      if (existsStatuses.length === 1) {
+        statusConditions.push("sections.status = ?");
+        filterParams.push(existsStatuses[0]);
+      } else if (existsStatuses.length > 1) {
+        const placeholders = existsStatuses.map(() => "?").join(",");
+        statusConditions.push(`sections.status IN (${placeholders})`);
+        filterParams.push(...existsStatuses);
+      }
+
+      // CLOSED: every section of the course is closed (no open/waitlisted sections)
+      if (hasClosed) {
+        statusConditions.push(`NOT EXISTS (
+          SELECT 1 FROM sections s_closed
+          WHERE s_closed.course_uuid = courses.course_uuid
+          AND s_closed.status != 'CLOSED'
+        )`);
+      }
+
+      if (statusConditions.length === 1) {
+        sectionFilters.push(statusConditions[0]);
       } else {
-        // Multiple statuses - use IN clause
-        const statusPlaceholders = statusList.map(() => "?").join(",");
-        sectionFilters.push(`sections.status IN (${statusPlaceholders})`);
-        filterParams.push(...statusList);
+        sectionFilters.push(`(${statusConditions.join(" OR ")})`);
       }
     }
 
