@@ -39,7 +39,7 @@ function uuids(body) {
 }
 
 const ALL = fixture.courses.map((c) => c.uuid).sort();
-const OPEN = ["uuid-c1", "uuid-c2", "uuid-c5", "uuid-c6", "uuid-c7", "uuid-c8", "uuid-c9", "uuid-c10", "uuid-c11", "uuid-c12"].sort();
+const OPEN = ["uuid-c1", "uuid-c2", "uuid-c5", "uuid-c6", "uuid-c7", "uuid-c8", "uuid-c9", "uuid-c10", "uuid-c11", "uuid-c12", "uuid-cross-1", "uuid-cross-2", "uuid-cross-3"].sort();
 
 // ─── Auth ──────────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ describe("status filter", () => {
     const body = await query({ status: "OPEN,WAITLISTED" });
     const ids = uuids(body);
     expect(ids).not.toContain("uuid-c3");
-    expect(ids.length).toBe(ALL.length - 1);
+    expect(ids.length).toBe(14);
   });
 
   it("status=OPEN,WAITLISTED,CLOSED returns all courses", async () => {
@@ -133,6 +133,7 @@ describe("credit filters", () => {
     expect(ids).not.toContain("uuid-c2"); // 5cr
     expect(ids).not.toContain("uuid-c6"); // 5cr
     expect(ids).not.toContain("uuid-c10"); // 2cr
+    expect(ids.length).toBe(12); // 15 total - 2 (5cr) - 1 (2cr)
   });
 });
 
@@ -142,7 +143,7 @@ describe("level filter", () => {
   it("level=Elementary returns correct courses", async () => {
     const body = await query({ level: "Elementary" });
     expect(uuids(body)).toEqual(
-      ["uuid-c2", "uuid-c3", "uuid-c4", "uuid-c5", "uuid-c7", "uuid-c10", "uuid-c12"].sort()
+      ["uuid-c2", "uuid-c3", "uuid-c4", "uuid-c5", "uuid-c7", "uuid-c10", "uuid-c12", "uuid-cross-1", "uuid-cross-2", "uuid-cross-3"].sort()
     );
   });
 
@@ -168,7 +169,7 @@ describe("prerequisite filters", () => {
   it("no_prereqs returns courses with enrollment_prerequisites='None'", async () => {
     const body = await query({ no_prereqs: "true" });
     expect(uuids(body)).toEqual(
-      ["uuid-c2", "uuid-c3", "uuid-c4", "uuid-c5", "uuid-c7", "uuid-c10", "uuid-c12"].sort()
+      ["uuid-c2", "uuid-c3", "uuid-c4", "uuid-c5", "uuid-c7", "uuid-c10", "uuid-c12", "uuid-cross-1", "uuid-cross-2", "uuid-cross-3"].sort()
     );
   });
 
@@ -194,6 +195,9 @@ describe("prerequisite filters", () => {
     expect(ids).toContain("uuid-c6"); // sophomore
     expect(ids).toContain("uuid-c2"); // none
     expect(ids).toContain("uuid-c7"); // none
+    expect(ids).toContain("uuid-cross-1"); // none
+    expect(ids).toContain("uuid-cross-2"); // none
+    expect(ids).toContain("uuid-cross-3"); // none
     expect(ids).not.toContain("uuid-c8"); // junior
     expect(ids).not.toContain("uuid-c9"); // senior
     expect(ids).not.toContain("uuid-c11"); // CS 200 prereq
@@ -208,7 +212,7 @@ describe("prerequisite filters", () => {
     });
     const ids = uuids(body);
     expect(ids).not.toContain("uuid-c11"); // prereq is "CS 200", not a standing
-    expect(ids.length).toBe(ALL.length - 1);
+    expect(ids.length).toBe(14); // 15 total - 1 (c11)
   });
 });
 
@@ -268,7 +272,7 @@ describe("GPA and grade filters", () => {
     const body = await query({ min_cumulative_gpa: "3.5" });
     const ids = uuids(body);
     expect(ids).toEqual(
-      ["uuid-c3", "uuid-c4", "uuid-c7", "uuid-c10", "uuid-c12"].sort()
+      ["uuid-c3", "uuid-c4", "uuid-c7", "uuid-c10", "uuid-c12", "uuid-cross-1"].sort()
     );
   });
 
@@ -333,11 +337,14 @@ describe("RMP section-level filters", () => {
     const body = await query({ min_section_avg_rating: "4.0" });
     const ids = uuids(body);
     // Alice=4.2 (c1), Diana=4.5 (c3), Ed=4.0 (c4), Holly=4.3 (c7), Ken=4.1 (c10)
+    // Cross Teacher A=4.8 (cross-1), Cross RMP High=4.9 (cross-2)
     expect(ids).toContain("uuid-c1");
     expect(ids).toContain("uuid-c3");
     expect(ids).toContain("uuid-c4");
     expect(ids).toContain("uuid-c7");
     expect(ids).toContain("uuid-c10");
+    expect(ids).toContain("uuid-cross-1");
+    expect(ids).toContain("uuid-cross-2");
     expect(ids).not.toContain("uuid-c2"); // Carol=3.0
   });
 
@@ -345,18 +352,24 @@ describe("RMP section-level filters", () => {
     const body = await query({ min_section_avg_difficulty: "3.0" });
     const ids = uuids(body);
     // Bob=3.0 (c1), Carol=3.5 (c2), Gary=3.2 (c6), Lily=3.1 (c11), Mike=3.3 (c12)
+    // Cross Teacher B=4.0 (cross-1), Cross RMP Low=4.5 (cross-2)
     expect(ids).toContain("uuid-c2");
     expect(ids).toContain("uuid-c6");
+    expect(ids).toContain("uuid-cross-1");
+    expect(ids).toContain("uuid-cross-2");
   });
 
   it("min_section_total_ratings=20 returns well-reviewed sections", async () => {
     const body = await query({ min_section_total_ratings: "20" });
     const ids = uuids(body);
     // Alice=20 (c1), Diana=30 (c3), Holly=25 (c7), Ken=22 (c10)
+    // Cross Teacher A=25 (cross-1), Cross RMP High=30 (cross-2)
     expect(ids).toContain("uuid-c1");
     expect(ids).toContain("uuid-c3");
     expect(ids).toContain("uuid-c7");
     expect(ids).toContain("uuid-c10");
+    expect(ids).toContain("uuid-cross-1");
+    expect(ids).toContain("uuid-cross-2");
   });
 });
 
@@ -382,12 +395,13 @@ describe("available seats filter", () => {
   it("min_available_seats=20 returns courses with sections having >= 20 seats", async () => {
     const body = await query({ min_available_seats: "20" });
     const ids = uuids(body);
-    // c1(30), c5(20), c7(25), c10(40), c12(30)
+    // c1(30), c5(20), c7(25), c10(40), c12(30), cross-3(30)
     expect(ids).toContain("uuid-c1");
     expect(ids).toContain("uuid-c5");
     expect(ids).toContain("uuid-c7");
     expect(ids).toContain("uuid-c10");
     expect(ids).toContain("uuid-c12");
+    expect(ids).toContain("uuid-cross-3");
     expect(ids).not.toContain("uuid-c2"); // 5 seats
     expect(ids).not.toContain("uuid-c3"); // 0 seats
   });
@@ -409,8 +423,9 @@ describe("schedule availability filter", () => {
     // MWF sections: c1-001, c2, c4, c6, c8, c10 all fit within 8am-5pm
     // c11 online section has no meeting times → passes
     // c11-301 (F only 2pm) fits within Friday window → passes
+    // cross-1 sec-001 (MWF), cross-2 sec-002 (MWF), cross-3 sec-001 (MWF) — all have a MWF section
     // TR-only courses excluded (meet on unfiltered Tue/Thu)
-    expect(ids).toEqual(["uuid-c1", "uuid-c10", "uuid-c11", "uuid-c2", "uuid-c4", "uuid-c6", "uuid-c8"].sort());
+    expect(ids).toEqual(["uuid-c1", "uuid-c10", "uuid-c11", "uuid-c2", "uuid-c4", "uuid-c6", "uuid-c8", "uuid-cross-1", "uuid-cross-2", "uuid-cross-3"].sort());
     expect(ids).not.toContain("uuid-c3");  // TR only
     expect(ids).not.toContain("uuid-c5");  // TR only
     expect(ids).not.toContain("uuid-c7");  // TR only
@@ -428,8 +443,9 @@ describe("schedule availability filter", () => {
     const ids = uuids(body);
     // TR sections: c1-002, c3, c5, c7, c9, c12 fit
     // c11 online section passes (no meetings)
+    // cross-1 sec-002 (TR), cross-2 sec-001 (TR), cross-3 sec-002 (TR) — all have a TR section
     // MWF-only courses excluded (meet on unfiltered Mon/Wed/Fri)
-    expect(ids).toEqual(["uuid-c1", "uuid-c11", "uuid-c12", "uuid-c3", "uuid-c5", "uuid-c7", "uuid-c9"].sort());
+    expect(ids).toEqual(["uuid-c1", "uuid-c11", "uuid-c12", "uuid-c3", "uuid-c5", "uuid-c7", "uuid-c9", "uuid-cross-1", "uuid-cross-2", "uuid-cross-3"].sort());
     expect(ids).not.toContain("uuid-c2");  // MWF only
     expect(ids).not.toContain("uuid-c4");  // MWF only
     expect(ids).not.toContain("uuid-c6");  // MWF only
@@ -456,7 +472,10 @@ describe("schedule availability filter", () => {
     // c10-001 (3:00-3:50) ends after 12pm ✗
     // c11-001 (online, no meetings) passes ✓
     // c11-301 (F 2:00-2:50) ends after 12pm ✗ — but c11 still passes via online section
-    expect(ids).toEqual(["uuid-c1", "uuid-c11", "uuid-c4", "uuid-c8"].sort());
+    // cross-1 sec-001 (MWF 9:00-9:50) fits ✓
+    // cross-2 sec-002 (MWF 10:00-10:50) fits ✓
+    // cross-3 sec-001 (MWF 2:00-2:50) ends after 12pm ✗
+    expect(ids).toEqual(["uuid-c1", "uuid-c11", "uuid-c4", "uuid-c8", "uuid-cross-1", "uuid-cross-2"].sort());
   });
 
   it("returns all sections of matching courses (course-level filter)", async () => {
@@ -489,7 +508,8 @@ describe("schedule availability filter", () => {
     });
     const ids = uuids(body);
     // MWF courses with status=OPEN (excludes c4 which is WAITLISTED)
-    expect(ids).toEqual(["uuid-c1", "uuid-c10", "uuid-c11", "uuid-c2", "uuid-c6", "uuid-c8"].sort());
+    // cross-1,2,3 all have courseStatus=2 and a MWF section (passes with independent filters)
+    expect(ids).toEqual(["uuid-c1", "uuid-c10", "uuid-c11", "uuid-c2", "uuid-c6", "uuid-c8", "uuid-cross-1", "uuid-cross-2", "uuid-cross-3"].sort());
     expect(ids).not.toContain("uuid-c4"); // WAITLISTED
   });
 });
@@ -531,20 +551,20 @@ describe("pagination", () => {
     const body = await query({ limit: "3", page: "1" });
     expect(body.data).toHaveLength(3);
     expect(body.has_more).toBe(true);
-    expect(body.total_count).toBe(12);
+    expect(body.total_count).toBe(15);
   });
 
-  it("limit=3 page=4 returns last 3 courses with has_more=false", async () => {
-    const body = await query({ limit: "3", page: "4" });
+  it("limit=3 page=5 returns last 3 courses with has_more=false", async () => {
+    const body = await query({ limit: "3", page: "5" });
     expect(body.data).toHaveLength(3);
     expect(body.has_more).toBe(false);
   });
 
-  it("limit=100 returns all 12 courses", async () => {
+  it("limit=100 returns all 15 courses", async () => {
     const body = await query({ limit: "100" });
-    expect(body.data).toHaveLength(12);
+    expect(body.data).toHaveLength(15);
     expect(body.has_more).toBe(false);
-    expect(body.total_count).toBe(12);
+    expect(body.total_count).toBe(15);
   });
 
   it("page beyond data returns empty", async () => {
@@ -560,7 +580,7 @@ describe("combined filter behavior", () => {
   it("OPEN + Elementary + no prereqs = beginner courses available now", async () => {
     const body = await query({ status: "OPEN", level: "Elementary", no_prereqs: "true" });
     expect(uuids(body)).toEqual(
-      ["uuid-c2", "uuid-c5", "uuid-c7", "uuid-c10", "uuid-c12"].sort()
+      ["uuid-c2", "uuid-c5", "uuid-c7", "uuid-c10", "uuid-c12", "uuid-cross-1", "uuid-cross-2", "uuid-cross-3"].sort()
     );
   });
 
@@ -571,8 +591,8 @@ describe("combined filter behavior", () => {
       max_credits: "3",
       min_cumulative_gpa: "3.5",
     });
-    // c7(3.8 open 3cr), c12(3.5 open 3cr). c3(3.6) is CLOSED, c4(3.7) is WAITLISTED
-    expect(uuids(body)).toEqual(["uuid-c12", "uuid-c7"].sort());
+    // c7(3.8 open 3cr), c12(3.5 open 3cr), cross-1(3.5 open 3cr). c3(3.6) is CLOSED, c4(3.7) is WAITLISTED
+    expect(uuids(body)).toEqual(["uuid-c12", "uuid-c7", "uuid-cross-1"].sort());
   });
 
   it("social_science + OPEN = empty (c3 is social sci but CLOSED)", async () => {
@@ -593,6 +613,8 @@ describe("combined filter behavior", () => {
     expect(ids).toContain("uuid-c1"); // Alice 4.2 OPEN
     expect(ids).toContain("uuid-c7"); // Holly 4.3 OPEN
     expect(ids).toContain("uuid-c10"); // Ken 4.1 OPEN
+    expect(ids).toContain("uuid-cross-1"); // Cross Teacher A 4.8, course OPEN
+    expect(ids).toContain("uuid-cross-2"); // Cross RMP High 4.9, course OPEN
   });
 
   it("search_param=COMP SCI + OPEN + min_credits=3", async () => {
@@ -614,7 +636,7 @@ describe("combined filter behavior", () => {
       page: "1",
     });
     expect(body.data).toHaveLength(3);
-    // Elementary sorted by GPA desc: c10(3.9), c7(3.8), c4(3.7), c3(3.6), c12(3.5), c5(3.1), c2(2.8)
+    // Elementary sorted by GPA desc: c10(3.9), c7(3.8), c4(3.7), c3(3.6), cross-1(3.5), c12(3.5), c5(3.1), cross-2(3.3), cross-3(3.0), c2(2.8)
     expect(body.data[0].course_uuid).toBe("uuid-c10");
     expect(body.data[1].course_uuid).toBe("uuid-c7");
     expect(body.data[2].course_uuid).toBe("uuid-c4");
@@ -741,5 +763,93 @@ describe("GET /api/courses", () => {
     expect(res.status).toBe(200);
     expect(body.data.length).toBeLessThanOrEqual(10);
     expect(body.data.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── Cross-section filter composition (known bug) ─────────────────
+// These tests define CORRECT section-level filter behavior.
+// They FAIL against the current API because status is checked at
+// course level (courses.status rollup) while schedule/RMP/seats
+// are checked at section level — filters never compose against
+// the same section row.
+//
+// When the new Postgres API is built, these tests must PASS.
+
+describe("cross-section filter composition (known bug)", () => {
+  it("status=OPEN + MWF must match the SAME section", async () => {
+    // uuid-cross-1: Section A is CLOSED+MWF, Section B is OPEN+TR
+    // No single section is both OPEN and MWF.
+    // Current API returns it (bug): courses.status=2 AND sec-001 has MWF meetings
+    // Correct behavior: should NOT return it
+    const body = await query({
+      status: "OPEN",
+      mondayStartTime: String(T(8, 0)),
+      mondayEndTime: String(T(17, 0)),
+      wednesdayStartTime: String(T(8, 0)),
+      wednesdayEndTime: String(T(17, 0)),
+      fridayStartTime: String(T(8, 0)),
+      fridayEndTime: String(T(17, 0)),
+    });
+    expect(uuids(body)).not.toContain("uuid-cross-1");
+  });
+
+  it("status=OPEN + min_section_avg_rating=4.0 must match the SAME section", async () => {
+    // uuid-cross-2: Section A is CLOSED with instructor rated 4.9,
+    //               Section B is OPEN with instructor rated 1.5
+    // No single section is both OPEN and has avg rating >= 4.0.
+    // Current API returns it (bug): courses.status=2 AND sec-001 has rating 4.9
+    // Correct behavior: should NOT return it
+    const body = await query({
+      status: "OPEN",
+      min_section_avg_rating: "4.0",
+    });
+    expect(uuids(body)).not.toContain("uuid-cross-2");
+  });
+
+  it("min_available_seats=10 + MWF must match the SAME section", async () => {
+    // uuid-cross-3: Section A has 0 seats + MWF, Section B has 30 seats + TR
+    // No single section has both >= 10 available seats and MWF schedule.
+    // This test happens to PASS on the current API because available_seats
+    // is evaluated per-section-row in the outer JOIN (not via course-level rollup
+    // like status). But this is coincidental — the correct architecture should
+    // compose these in an EXISTS subquery.
+    const body = await query({
+      min_available_seats: "10",
+      mondayStartTime: String(T(8, 0)),
+      mondayEndTime: String(T(17, 0)),
+      wednesdayStartTime: String(T(8, 0)),
+      wednesdayEndTime: String(T(17, 0)),
+      fridayStartTime: String(T(8, 0)),
+      fridayEndTime: String(T(17, 0)),
+    });
+    expect(uuids(body)).not.toContain("uuid-cross-3");
+  });
+
+  it("status=OPEN + MWF + high rating must ALL match the SAME section", async () => {
+    // uuid-cross-1: sec-001 is CLOSED+MWF+4.8 rating, sec-002 is OPEN+TR+2.0 rating
+    // No single section is OPEN + MWF + rating >= 4.0
+    // Current API returns it (bug): course status=2 + sec-001 is MWF + sec-001 has 4.8 rating
+    // Correct: should NOT return it (the 4.8-rated MWF section is CLOSED)
+    const body = await query({
+      status: "OPEN",
+      min_section_avg_rating: "4.0",
+      mondayStartTime: String(T(8, 0)),
+      mondayEndTime: String(T(17, 0)),
+      wednesdayStartTime: String(T(8, 0)),
+      wednesdayEndTime: String(T(17, 0)),
+      fridayStartTime: String(T(8, 0)),
+      fridayEndTime: String(T(17, 0)),
+    });
+    expect(uuids(body)).not.toContain("uuid-cross-1");
+  });
+
+  it("all three cross-section courses appear with no section-level filters", async () => {
+    // Sanity check: without section-level filters, these courses exist in the dataset
+    const body = await query({ search_param: "Cross" });
+    const ids = uuids(body);
+    expect(ids).toContain("uuid-cross-1");
+    expect(ids).toContain("uuid-cross-2");
+    expect(ids).toContain("uuid-cross-3");
+    expect(ids).toHaveLength(3);
   });
 });
