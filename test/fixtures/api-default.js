@@ -14,6 +14,10 @@ export const fixture = {
     { id: "c10", uuid: "uuid-c10", designation: "MUSIC 113", full: "MUSIC 113", title: "Music Theory", subject: "MUSIC", catalog: 113, minCr: 2, maxCr: 2, level: "Elementary", prereq: "None", ethnic: null, social: null, hum: "H", bio: null, phys: null, nat: null, lit: null, genEd: null, ls: null, gpa: 3.9, recentGpa: 3.85, aPct: 55, median: "A", courseStatus: 2 },
     { id: "c11", uuid: "uuid-c11", designation: "COMP SCI 300", full: "COMP SCI 300", title: "Programming II", subject: "COMP SCI", catalog: 300, minCr: 3, maxCr: 3, level: "Intermediate", prereq: "CS 200", ethnic: null, social: null, hum: null, bio: null, phys: null, nat: null, lit: null, genEd: null, ls: null, gpa: 3.3, recentGpa: 3.25, aPct: 28, median: "B", courseStatus: 2 },
     { id: "c12", uuid: "uuid-c12", designation: "GEN ED 100", full: "GEN ED 100", title: "Comm B Course", subject: "GEN ED", catalog: 100, minCr: 3, maxCr: 3, level: "Elementary", prereq: "None", ethnic: null, social: null, hum: null, bio: null, phys: null, nat: null, lit: null, genEd: "COM B", ls: null, gpa: 3.5, recentGpa: 3.45, aPct: 38, median: "AB", courseStatus: 2 },
+    // Cross-section test courses: designed to expose the section-level filter composition bug
+    { id: "cross1", uuid: "uuid-cross-1", designation: "TEST 301", full: "TEST 301", title: "Cross Section Demo", subject: "TEST", catalog: 301, minCr: 3, maxCr: 3, level: "Elementary", prereq: "None", ethnic: null, social: null, hum: null, bio: null, phys: null, nat: null, lit: null, genEd: null, ls: null, gpa: 3.5, recentGpa: 3.45, aPct: 35, median: "B", courseStatus: 2 },
+    { id: "cross2", uuid: "uuid-cross-2", designation: "TEST 302", full: "TEST 302", title: "Cross RMP Demo", subject: "TEST", catalog: 302, minCr: 3, maxCr: 3, level: "Elementary", prereq: "None", ethnic: null, social: null, hum: null, bio: null, phys: null, nat: null, lit: null, genEd: null, ls: null, gpa: 3.3, recentGpa: 3.25, aPct: 30, median: "B", courseStatus: 2 },
+    { id: "cross3", uuid: "uuid-cross-3", designation: "TEST 303", full: "TEST 303", title: "Cross Seats Demo", subject: "TEST", catalog: 303, minCr: 3, maxCr: 3, level: "Elementary", prereq: "None", ethnic: null, social: null, hum: null, bio: null, phys: null, nat: null, lit: null, genEd: null, ls: null, gpa: 3.0, recentGpa: 2.95, aPct: 20, median: "B", courseStatus: 2 },
   ],
 
   sections: [
@@ -31,6 +35,13 @@ export const fixture = {
     { sid: "sec-c11-001", usid: "usec-c11-001", cuuid: "uuid-c11", status: "OPEN", seats: 10, wl: 0, cap: 100, enrolled: 90, mode: "Online", async: 1, requisites: null },
     { sid: "sec-c11-301", usid: "usec-c11-301", cuuid: "uuid-c11", status: "OPEN", seats: 15, wl: 0, cap: 25, enrolled: 10, mode: "In Person", async: 0, requisites: null },
     { sid: "sec-c12-001", usid: "usec-c12-001", cuuid: "uuid-c12", status: "OPEN", seats: 30, wl: 0, cap: 50, enrolled: 20, mode: "In Person", async: 0, requisites: null },
+    // Cross-section test sections
+    { sid: "sec-cross1-001", usid: "usec-cross1-001", cuuid: "uuid-cross-1", status: "CLOSED", seats: 0, wl: 0, cap: 40, enrolled: 40, mode: "In Person", async: 0, requisites: null },
+    { sid: "sec-cross1-002", usid: "usec-cross1-002", cuuid: "uuid-cross-1", status: "OPEN", seats: 10, wl: 0, cap: 40, enrolled: 30, mode: "In Person", async: 0, requisites: null },
+    { sid: "sec-cross2-001", usid: "usec-cross2-001", cuuid: "uuid-cross-2", status: "CLOSED", seats: 0, wl: 0, cap: 30, enrolled: 30, mode: "In Person", async: 0, requisites: null },
+    { sid: "sec-cross2-002", usid: "usec-cross2-002", cuuid: "uuid-cross-2", status: "OPEN", seats: 10, wl: 0, cap: 30, enrolled: 20, mode: "In Person", async: 0, requisites: null },
+    { sid: "sec-cross3-001", usid: "usec-cross3-001", cuuid: "uuid-cross-3", status: "OPEN", seats: 0, wl: 0, cap: 40, enrolled: 40, mode: "In Person", async: 0, requisites: null },
+    { sid: "sec-cross3-002", usid: "usec-cross3-002", cuuid: "uuid-cross-3", status: "OPEN", seats: 30, wl: 0, cap: 50, enrolled: 20, mode: "In Person", async: 0, requisites: null },
   ],
 
   instructors: [
@@ -47,6 +58,13 @@ export const fixture = {
     { sid: "sec-c10-001", name: "Ken Lee" },
     { sid: "sec-c11-001", name: "Lily Ma" },
     { sid: "sec-c12-001", name: "Mike Ng" },
+    // Cross-section test instructors
+    { sid: "sec-cross1-001", name: "Cross Teacher A" },
+    { sid: "sec-cross1-002", name: "Cross Teacher B" },
+    { sid: "sec-cross2-001", name: "Cross RMP High" },
+    { sid: "sec-cross2-002", name: "Cross RMP Low" },
+    { sid: "sec-cross3-001", name: "Cross Seats A" },
+    { sid: "sec-cross3-002", name: "Cross Seats B" },
   ],
 
   rmp: [
@@ -63,6 +81,13 @@ export const fixture = {
     { name: "Ken Lee", rating: 4.1, diff: 2.4, num: 22, wta: 88, legacy: "rmp-ken" },
     { name: "Lily Ma", rating: 3.5, diff: 3.1, num: 9, wta: 65, legacy: "rmp-lily" },
     { name: "Mike Ng", rating: 3.4, diff: 3.3, num: 7, wta: 58, legacy: "rmp-mike" },
+    // Cross-section test RMP data
+    { name: "Cross Teacher A", rating: 4.8, diff: 2.0, num: 25, wta: 95, legacy: "rmp-cross-a" },
+    { name: "Cross Teacher B", rating: 2.0, diff: 4.0, num: 5, wta: 30, legacy: "rmp-cross-b" },
+    { name: "Cross RMP High", rating: 4.9, diff: 1.5, num: 30, wta: 98, legacy: "rmp-cross-high" },
+    { name: "Cross RMP Low", rating: 1.5, diff: 4.5, num: 3, wta: 20, legacy: "rmp-cross-low" },
+    { name: "Cross Seats A", rating: 3.5, diff: 2.8, num: 12, wta: 70, legacy: "rmp-cross-seats-a" },
+    { name: "Cross Seats B", rating: 3.5, diff: 2.8, num: 12, wta: 70, legacy: "rmp-cross-seats-b" },
   ],
 
   meetings: [
@@ -80,5 +105,12 @@ export const fixture = {
     { usid: "usec-c11-001", num: 1, days: null, secNum: "001", start: null, end: null, type: "LEC", bldg: null, room: null, loc: "ONLINE", mon_s: null, mon_e: null, tue_s: null, tue_e: null, wed_s: null, wed_e: null, thu_s: null, thu_e: null, fri_s: null, fri_e: null },
     { usid: "usec-c11-301", num: 1, days: "F", secNum: "301", start: "2:00 PM", end: "2:50 PM", type: "DIS", bldg: "CS Building", room: "B240", loc: "1210 W Dayton St", mon_s: null, mon_e: null, tue_s: null, tue_e: null, wed_s: null, wed_e: null, thu_s: null, thu_e: null, fri_s: T(14,0), fri_e: T(14,50) },
     { usid: "usec-c12-001", num: 1, days: "TR", secNum: "001", start: "11:00 AM", end: "12:15 PM", type: "LEC", bldg: "Education", room: "159", loc: "1000 Bascom Mall", mon_s: null, mon_e: null, tue_s: T(11,0), tue_e: T(12,15), wed_s: null, wed_e: null, thu_s: T(11,0), thu_e: T(12,15), fri_s: null, fri_e: null },
+    // Cross-section test meetings
+    { usid: "usec-cross1-001", num: 1, days: "MWF", secNum: "001", start: "9:00 AM", end: "9:50 AM", type: "LEC", bldg: "Test Hall", room: "101", loc: "Test St", mon_s: T(9,0), mon_e: T(9,50), tue_s: null, tue_e: null, wed_s: T(9,0), wed_e: T(9,50), thu_s: null, thu_e: null, fri_s: T(9,0), fri_e: T(9,50) },
+    { usid: "usec-cross1-002", num: 1, days: "TR", secNum: "002", start: "11:00 AM", end: "12:15 PM", type: "LEC", bldg: "Test Hall", room: "102", loc: "Test St", mon_s: null, mon_e: null, tue_s: T(11,0), tue_e: T(12,15), wed_s: null, wed_e: null, thu_s: T(11,0), thu_e: T(12,15), fri_s: null, fri_e: null },
+    { usid: "usec-cross2-001", num: 1, days: "TR", secNum: "001", start: "1:00 PM", end: "2:15 PM", type: "LEC", bldg: "Test Hall", room: "201", loc: "Test St", mon_s: null, mon_e: null, tue_s: T(13,0), tue_e: T(14,15), wed_s: null, wed_e: null, thu_s: T(13,0), thu_e: T(14,15), fri_s: null, fri_e: null },
+    { usid: "usec-cross2-002", num: 1, days: "MWF", secNum: "002", start: "10:00 AM", end: "10:50 AM", type: "LEC", bldg: "Test Hall", room: "202", loc: "Test St", mon_s: T(10,0), mon_e: T(10,50), tue_s: null, tue_e: null, wed_s: T(10,0), wed_e: T(10,50), thu_s: null, thu_e: null, fri_s: T(10,0), fri_e: T(10,50) },
+    { usid: "usec-cross3-001", num: 1, days: "MWF", secNum: "001", start: "2:00 PM", end: "2:50 PM", type: "LEC", bldg: "Test Hall", room: "301", loc: "Test St", mon_s: T(14,0), mon_e: T(14,50), tue_s: null, tue_e: null, wed_s: T(14,0), wed_e: T(14,50), thu_s: null, thu_e: null, fri_s: T(14,0), fri_e: T(14,50) },
+    { usid: "usec-cross3-002", num: 1, days: "TR", secNum: "002", start: "3:00 PM", end: "4:15 PM", type: "LEC", bldg: "Test Hall", room: "302", loc: "Test St", mon_s: null, mon_e: null, tue_s: T(15,0), tue_e: T(16,15), wed_s: null, wed_e: null, thu_s: T(15,0), thu_e: T(16,15), fri_s: null, fri_e: null },
   ],
 };

@@ -83,13 +83,12 @@ app.get("/api/query", async (c) => {
       
     } = c.req.query();
 
-    // Build WHERE clause for section filters
-    let sectionFilters = [];
-    let courseFilters = [];
-    let rmpSectionFilters = []; // New: for RMP section-level filters
-    let meetingFilters = []; // New: for meeting-related filters
+    // Build WHERE clause — single array so param order matches placeholder order
+    let allFilters = [];
     let filterParams = [];
+    let meetingFilters = [];
     let daysWithFilters = [];
+    let needRmpJoin = false;
 
     // Helper function to create time range filters for a specific day
     const addDayTimeFilter = (dayColumn, startTimes, endTimes, dayName) => {
@@ -102,16 +101,13 @@ app.get("/api/query", async (c) => {
           return;
         }
 
-        // Create OR conditions for each time range
         const timeRangeConditions = [];
         for (let i = 0; i < startArray.length; i++) {
           const startTime = startArray[i];
           const endTime = endArray[i];
 
-          // Check if the meeting overlaps with the availability window
-          // Meeting overlaps if: meeting_start < availability_end AND meeting_end > availability_start
           timeRangeConditions.push(`(
-            section_meetings.${dayColumn}_meeting_start IS NOT NULL AND 
+            section_meetings.${dayColumn}_meeting_start IS NOT NULL AND
             (section_meetings.${dayColumn}_meeting_start < ?
             OR section_meetings.${dayColumn}_meeting_end > ?)
           )`);
@@ -121,8 +117,7 @@ app.get("/api/query", async (c) => {
 
         if (timeRangeConditions.length > 0) {
           daysWithFilters.push(dayName);
-          //Joining or so in case of multiple availability windows in a single day
-          meetingFilters.push(`(${timeRangeConditions.join(' OR ')})`);
+          meetingFilters.push(`(${timeRangeConditions.join(' AND ')})`);
         }
       }
     };
@@ -134,95 +129,95 @@ app.get("/api/query", async (c) => {
       const statusInts = statusList.map((s) => STATUS_MAP[s]).filter((v) => v !== undefined);
 
       if (statusInts.length === 1) {
-        courseFilters.push("courses.status = ?");
+        allFilters.push("courses.status = ?");
         filterParams.push(statusInts[0]);
       } else if (statusInts.length > 1) {
         const placeholders = statusInts.map(() => "?").join(",");
-        courseFilters.push(`courses.status IN (${placeholders})`);
+        allFilters.push(`courses.status IN (${placeholders})`);
         filterParams.push(...statusInts);
       }
     }
 
     if (instruction_mode) {
-      sectionFilters.push("sections.instruction_mode = ?");
+      allFilters.push("sections.instruction_mode = ?");
       filterParams.push(instruction_mode);
     }
 
     if (min_available_seats) {
-      sectionFilters.push("sections.available_seats >= ?");
+      allFilters.push("sections.available_seats >= ?");
       filterParams.push(min_available_seats);
     }
 
     if (min_a_percent) {
-      courseFilters.push("madgrades_course_grades.a_percentage >= ?");
+      allFilters.push("madgrades_course_grades.a_percentage >= ?");
       filterParams.push(min_a_percent);
     }
 
     if (median_grade) {
-      courseFilters.push("madgrades_course_grades.median_grade = ?");
+      allFilters.push("madgrades_course_grades.median_grade = ?");
       filterParams.push(median_grade);
     }
 
     if (l_and_s) {
-      courseFilters.push("letters_and_science_credits = 'C'");
+      allFilters.push("letters_and_science_credits = 'C'");
     }
 
     // Course-level filters
     if (min_credits) {
-      courseFilters.push("courses.minimum_credits >= ?");
+      allFilters.push("courses.minimum_credits >= ?");
       filterParams.push(min_credits);
     }
     if (max_credits) {
-      courseFilters.push("courses.maximum_credits <= ?");
+      allFilters.push("courses.maximum_credits <= ?");
       filterParams.push(max_credits);
     }
 
     if (level) {
       const levelList = level.split(",").map((l) => l.trim());
       if (levelList.length === 1) {
-        courseFilters.push("courses.level = ?");
+        allFilters.push("courses.level = ?");
         filterParams.push(levelList[0]);
       } else {
         const placeholders = levelList.map(() => "?").join(",");
-        courseFilters.push(`courses.level IN (${placeholders})`);
+        allFilters.push(`courses.level IN (${placeholders})`);
         filterParams.push(...levelList);
       }
     }
     if (gen_ed) {
-      courseFilters.push("courses.general_education = ?");
+      allFilters.push("courses.general_education = ?");
       filterParams.push(gen_ed);
     }
     if (ethnic_studies) {
-      courseFilters.push("courses.ethnic_studies = ?");
+      allFilters.push("courses.ethnic_studies = ?");
       filterParams.push("ETHNIC ST");
     }
     if (social_science) {
-      courseFilters.push("courses.social_science = ?");
+      allFilters.push("courses.social_science = ?");
       filterParams.push("S");
     }
     if (humanities) {
-      courseFilters.push("courses.humanities = ?");
+      allFilters.push("courses.humanities = ?");
       filterParams.push("H");
     }
     if (biological_science) {
-      courseFilters.push("courses.biological_science = ?");
+      allFilters.push("courses.biological_science = ?");
       filterParams.push("B");
     }
     if (physical_science) {
-      courseFilters.push("courses.physical_science = ?");
+      allFilters.push("courses.physical_science = ?");
       filterParams.push("P");
     }
     if (natural_science) {
-      courseFilters.push("courses.natural_science = ?");
+      allFilters.push("courses.natural_science = ?");
       filterParams.push("N");
     }
     if (literature) {
-      courseFilters.push("courses.literature = ?");
+      allFilters.push("courses.literature = ?");
       filterParams.push("L");
     }
 
     if (in_person_only) {
-      meetingFilters.push("section_meetings.location != 'ONLINE' AND section_meetings.location != 'OFF CAMPUS'");
+      meetingFilters.push("(section_meetings.location = 'ONLINE' OR section_meetings.location = 'OFF CAMPUS')");
     }
 
     if (no_prereqs || sophomore_standing || junior_standing || senior_standing) {
@@ -246,85 +241,81 @@ app.get("/api/query", async (c) => {
       }
 
       // Add the OR condition to course filters
-      courseFilters.push(`(${prereqConditions.join(" OR ")})`);
+      allFilters.push(`(${prereqConditions.join(" OR ")})`);
     }
 
     if (min_cumulative_gpa) {
-      courseFilters.push("madgrades_course_grades.cumulative_gpa >= ?");
+      allFilters.push("madgrades_course_grades.cumulative_gpa >= ?");
       filterParams.push(min_cumulative_gpa);
     }
 
     if (min_most_recent_gpa) {
-      courseFilters.push("madgrades_course_grades.most_recent_gpa >= ?");
+      allFilters.push("madgrades_course_grades.most_recent_gpa >= ?");
       filterParams.push(min_most_recent_gpa);
     }
 
-    // New RMP section-level filters
+    // RMP section-level filters
     if (min_section_avg_rating) {
-      rmpSectionFilters.push("section_rmp_avg.section_avg_rating >= ?");
+      allFilters.push("section_rmp_avg.section_avg_rating >= ?");
       filterParams.push(parseFloat(min_section_avg_rating));
+      needRmpJoin = true;
     }
     if (min_section_avg_difficulty) {
-      rmpSectionFilters.push("section_rmp_avg.section_avg_difficulty >= ?");
+      allFilters.push("section_rmp_avg.section_avg_difficulty >= ?");
       filterParams.push(parseFloat(min_section_avg_difficulty));
+      needRmpJoin = true;
     }
     if (min_section_total_ratings) {
-      rmpSectionFilters.push("section_rmp_avg.section_total_ratings >= ?");
+      allFilters.push("section_rmp_avg.section_total_ratings >= ?");
       filterParams.push(parseInt(min_section_total_ratings));
+      needRmpJoin = true;
     }
     if (min_section_avg_would_take_again) {
-      rmpSectionFilters.push(
-        "section_rmp_avg.section_avg_would_take_again >= ?"
-      );
+      allFilters.push("section_rmp_avg.section_avg_would_take_again >= ?");
       filterParams.push(parseFloat(min_section_avg_would_take_again));
+      needRmpJoin = true;
     }
-
-    // Add day-specific time filters and collect them
-    const dayFilters = [];
-
-    addDayTimeFilter('monday', mondayStartTime, mondayEndTime, 'Monday');
-    addDayTimeFilter('tuesday', tuesdayStartTime, tuesdayEndTime, 'Tuesday');
-    addDayTimeFilter('wednesday', wednesdayStartTime, wednesdayEndTime, 'Wednesday');
-    addDayTimeFilter('thursday', thursdayStartTime, thursdayEndTime, 'Thursday');
-    addDayTimeFilter('friday', fridayStartTime, fridayEndTime, 'Friday');
-
-
-    const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
-
-    // If we have any day filters, combine them with AND logic
-    // This means: the section must be compatible with ALL specified days
-    if (daysWithFilters.length > 0) {
-      allDays.forEach(day => {
-        if (!daysWithFilters.includes(day)) {
-          meetingFilters.push(`section_meetings.${day}_meeting_start IS NULL AND section_meetings.${day}_meeting_end IS NULL`);
-        }
-      });
-
-    }
-
-
 
     if (search_param) {
-      courseFilters.push(
+      allFilters.push(
         "(courses.course_designation LIKE ? OR courses.course_title LIKE ? OR courses.full_course_designation LIKE ? OR si.instructor_name LIKE ?)"
       );
       const searchValue = `%${search_param}%`;
       filterParams.push(searchValue, searchValue, searchValue, searchValue);
     }
 
+    // Meeting time filters — must come after search_param so params stay in order
+    addDayTimeFilter('monday', mondayStartTime, mondayEndTime, 'Monday');
+    addDayTimeFilter('tuesday', tuesdayStartTime, tuesdayEndTime, 'Tuesday');
+    addDayTimeFilter('wednesday', wednesdayStartTime, wednesdayEndTime, 'Wednesday');
+    addDayTimeFilter('thursday', thursdayStartTime, thursdayEndTime, 'Thursday');
+    addDayTimeFilter('friday', fridayStartTime, fridayEndTime, 'Friday');
+
+    if (daysWithFilters.length > 0) {
+      const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+      const daysLower = daysWithFilters.map(d => d.toLowerCase());
+      allDays.forEach(day => {
+        if (!daysLower.includes(day)) {
+          meetingFilters.push(`section_meetings.${day}_meeting_start IS NOT NULL`);
+        }
+      });
+    }
+
+    const needMeetingJoin = meetingFilters.length > 0;
+    if (needMeetingJoin) {
+      allFilters.push(`
+      NOT EXISTS (
+        SELECT 1
+        FROM section_meetings
+        WHERE section_meetings.unique_section_id = sections.unique_section_id
+        AND (${meetingFilters.join(' OR ')})
+      )`);
+    }
+
     const offset = (page - 1) * limit;
-
-    let allFilters = [
-      ...sectionFilters,
-      ...courseFilters,
-      ...rmpSectionFilters,
-    ];
-
     const limitValue = parseInt(limit) || 10;
 
-    // Build ORDER BY clause based on sort parameter
-    let orderByClause = "ORDER BY courses.catalog_number"; // default
+    let orderByClause = "ORDER BY courses.catalog_number";
     if (sort) {
       const sortLower = sort.toLowerCase();
       if (sortLower === "cumulative_gpa") {
@@ -332,23 +323,6 @@ app.get("/api/query", async (c) => {
       } else if (sortLower === "recent_gpa") {
         orderByClause = "ORDER BY madgrades_course_grades.most_recent_gpa DESC";
       }
-      // If sort is not recognized, keep default
-    }
-
-    // Determine if we need to join section_meetings table
-    const needMeetingJoin = meetingFilters.length > 0;
-
-
-    if (needMeetingJoin) {
-      const meetingSubquery = `
-      NOT EXISTS (
-        SELECT 1 
-        FROM section_meetings 
-        WHERE section_meetings.unique_section_id = sections.unique_section_id
-        AND (${meetingFilters.join(' OR ')})
-      )
-      `
-      allFilters.push(meetingSubquery);
     }
 
     // UPDATED: Count query now uses DISTINCT course_uuid instead of course_id
@@ -403,7 +377,7 @@ app.get("/api/query", async (c) => {
     JOIN sections ON courses.course_uuid = sections.course_uuid
     JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
     LEFT JOIN section_instructors si ON sections.section_id = si.section_id
-    ${rmpSectionFilters.length > 0
+    ${needRmpJoin
         ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
         : ""
       }
@@ -472,7 +446,7 @@ app.get("/api/query", async (c) => {
           JOIN sections ON courses.course_uuid = sections.course_uuid
           JOIN madgrades_course_grades ON courses.course_designation = madgrades_course_grades.course_name
           LEFT JOIN section_instructors si ON sections.section_id = si.section_id
-          ${rmpSectionFilters.length > 0
+          ${needRmpJoin
             ? "JOIN section_rmp_avg ON sections.section_id = section_rmp_avg.section_id"
             : ""
           }
