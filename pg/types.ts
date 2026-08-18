@@ -127,9 +127,17 @@ export interface SectionSubscriptionsTable {
   created_at: ColumnType<Date, never, never>;
 }
 
+export interface SubjectsTable {
+  subject_code: string;
+  footnotes: string | null;
+  created_at: ColumnType<Date, never, never>;
+  updated_at: ColumnType<Date, never, never>;
+}
+
 // ── Kysely Database interface ──
 
 export interface Database {
+  subjects: SubjectsTable;
   courses: CoursesTable;
   sections: SectionsTable;
   section_instructors: SectionInstructorsTable;
