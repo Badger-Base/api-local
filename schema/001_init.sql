@@ -69,6 +69,7 @@ CREATE TABLE courses (
 CREATE TABLE sections (
     id                  SERIAL PRIMARY KEY,
     section_id          VARCHAR(50) NOT NULL,  -- UW enrollmentClassNumber, shared across cross-listings
+    section_uuid        VARCHAR(50) NOT NULL UNIQUE,
     course_ref          INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
     status              section_status NOT NULL DEFAULT 'CLOSED',
     available_seats     INTEGER NOT NULL DEFAULT 0,
