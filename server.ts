@@ -5,6 +5,11 @@ import Redis from "ioredis";
 import { createApp } from "./api.js";
 import { createSubscriptionApp, elasticEmailSender } from "./subscription_api.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
+import { createPgApp } from "./pg/routes/courses.ts";
+import { createDb } from "./pg/db.ts";
+import { createCache } from "./pg/cache.ts";
+
+const usePg = Bun.env.USE_PG === "true";
 
 const required = [
   "SUPABASE_JWT_SECRET",
@@ -12,6 +17,7 @@ const required = [
   "MYSQL_URL",
   "GET_API_KEY",
   "SUBSCRIPTION_API_KEY",
+  ...(usePg ? (["DATABASE_URL"] as const) : ([] as const)),
 ] as const;
 for (const key of required) {
   if (!Bun.env[key]) {
@@ -45,11 +51,21 @@ app.use("/*", cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-app.route(
-  "/",
-  createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY })
-);
+if (usePg) {
+  const db = createDb(Bun.env.DATABASE_URL!);
+  const queryCache = createCache(redis);
+  app.route(
+    "/",
+    createPgApp({ db, cache: queryCache, apiKey: Bun.env.GET_API_KEY! })
+  );
+} else {
+  app.route(
+    "/",
+    createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY })
+  );
+}
 
+// Subscription routes stay on MySQL for now (separate migration).
 app.route(
   "/",
   createSubscriptionApp({
