@@ -52,9 +52,9 @@ async function ensureSchema(pool: pg.Pool): Promise<void> {
 }
 
 export async function setupTestDb(): Promise<TestDb> {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = process.env.TEST_DATABASE_URL;
   if (!connectionString) {
-    throw new Error("DATABASE_URL env var is required to run pg-tests");
+    throw new Error("TEST_DATABASE_URL env var is required to run pg-tests");
   }
 
   const pool = new pg.Pool({ connectionString });

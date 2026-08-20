@@ -16,6 +16,7 @@ type AnyQuery = SelectQueryBuilder<Database, "courses", any>;
  */
 export function applyCourseFilters(query: AnyQuery, params: Record<string, string>): AnyQuery {
   const {
+    subject_code,
     min_credits,
     max_credits,
     level,
@@ -33,6 +34,14 @@ export function applyCourseFilters(query: AnyQuery, params: Record<string, strin
     junior_standing,
     senior_standing,
   } = params;
+
+  if (subject_code) {
+    query = query.where(
+      "courses.course_designation",
+      "ilike",
+      `${subject_code} %`
+    );
+  }
 
   if (min_credits) {
     query = query.where("courses.minimum_credits", ">=", parseInt(min_credits));

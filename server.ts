@@ -9,15 +9,13 @@ import { createPgApp } from "./pg/routes/courses.ts";
 import { createDb } from "./pg/db.ts";
 import { createCache } from "./pg/cache.ts";
 
-const usePg = Bun.env.USE_PG === "true";
-
 const required = [
   "SUPABASE_JWT_SECRET",
   "REDIS_URL",
   "MYSQL_URL",
   "GET_API_KEY",
   "SUBSCRIPTION_API_KEY",
-  ...(usePg ? (["DATABASE_URL"] as const) : ([] as const)),
+  "DATABASE_URL",
 ] as const;
 for (const key of required) {
   if (!Bun.env[key]) {
@@ -51,19 +49,17 @@ app.use("/*", cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-if (usePg) {
-  const db = createDb(Bun.env.DATABASE_URL!);
-  const queryCache = createCache(redis);
-  app.route(
-    "/",
-    createPgApp({ db, cache: queryCache, apiKey: Bun.env.GET_API_KEY! })
-  );
-} else {
-  app.route(
-    "/",
-    createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY })
-  );
-}
+app.route(
+  "/",
+  createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY })
+);
+
+const pgDb = createDb(Bun.env.DATABASE_URL!);
+const queryCache = createCache(redis);
+app.route(
+  "/v2",
+  createPgApp({ db: pgDb, cache: queryCache, apiKey: Bun.env.GET_API_KEY! })
+);
 
 // Subscription routes stay on MySQL for now (separate migration).
 app.route(
@@ -82,10 +78,10 @@ Bun.serve({ port, fetch: app.fetch });
 console.log(`BadgerBase API running on port ${port}`);
 
 process.on("SIGINT", async () => {
-  await Promise.all([pool.end(), redis.quit()]);
+  await Promise.all([pool.end(), redis.quit(), pgDb?.destroy()]);
   process.exit(0);
 });
 process.on("SIGTERM", async () => {
-  await Promise.all([pool.end(), redis.quit()]);
+  await Promise.all([pool.end(), redis.quit(), pgDb?.destroy()]);
   process.exit(0);
 });

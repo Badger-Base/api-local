@@ -106,4 +106,13 @@ describe("courses route", () => {
     expect(uuids).toContain("uuid-cs200"); // Good Prof teaches sec 2
     expect(uuids).toContain("uuid-cs400"); // Good Prof teaches sec 3
   });
+
+  // Finding #1: sort order preserved through hydration
+  it("sort=cumulative_gpa returns results in GPA descending order", async () => {
+    const body = await query({ sort: "cumulative_gpa" });
+    const gpas = body.data.map((c: any) => c.cumulative_gpa);
+    for (let i = 1; i < gpas.length; i++) {
+      expect(gpas[i - 1]).toBeGreaterThanOrEqual(gpas[i]);
+    }
+  });
 });

@@ -169,10 +169,21 @@ export interface MeetingResponse {
   building_name: string | null;
   room: string | null;
   location: string | null;
+  monday_meeting_start: number | null;
+  monday_meeting_end: number | null;
+  tuesday_meeting_start: number | null;
+  tuesday_meeting_end: number | null;
+  wednesday_meeting_start: number | null;
+  wednesday_meeting_end: number | null;
+  thursday_meeting_start: number | null;
+  thursday_meeting_end: number | null;
+  friday_meeting_start: number | null;
+  friday_meeting_end: number | null;
 }
 
 export interface SectionResponse {
-  section_id: number;
+  section_id: string;
+  section_uuid: string;
   status: string;
   available_seats: number;
   waitlist_total: number;
@@ -213,6 +224,8 @@ export interface CourseResponse {
   level: string | null;
   typically_offered: string | null;
   workplace_experience_description: string | null;
+  grading_basis_description: string | null;
+  open_to_first_year: boolean;
   repeatable_for_credit: boolean;
   cumulative_gpa: number | null;
   most_recent_gpa: number | null;

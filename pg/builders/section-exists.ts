@@ -151,52 +151,84 @@ function buildSectionSubquery(
     );
   }
 
-  // Schedule / location filters — require an inner EXISTS over
-  // section_meetings correlated to THIS section (sections.id).
+  // In-person filter: section must have at least one in-person meeting.
+  // Separate from schedule because it's an EXISTS (positive) condition.
+  if (p.in_person_only === "true") {
+    sub = sub.where(({ exists, selectFrom: innerSelect }: any) =>
+      exists(
+        innerSelect("section_meetings")
+          .select(sql`1`.as("one"))
+          .whereRef("section_meetings.section_id", "=", "sections.id")
+          .where("section_meetings.location", "!=", "ONLINE")
+          .where("section_meetings.location", "!=", "OFF CAMPUS")
+      )
+    );
+  }
+
+  // Schedule filter: ALL meetings of the section must be compatible with the
+  // user's availability. A meeting violates if it has times on an unfiltered
+  // day, or times on a filtered day that fall outside the availability window.
+  // NOT EXISTS (violating meeting) ensures every meeting fits.
   const dayFilters = DAYS.filter(
     (day) => p[`${day}StartTime` as keyof SectionFilterParams]
   );
 
-  if (dayFilters.length > 0 || p.in_person_only) {
-    sub = sub.where(({ exists, selectFrom: innerSelect }: any) =>
-      exists(
-        (() => {
-          let meetSub = innerSelect("section_meetings")
-            .select(sql`1`.as("one"))
-            .whereRef("section_meetings.section_id", "=", "sections.id");
+  if (dayFilters.length > 0) {
+    sub = sub.where(({ selectFrom: innerSelect }: any) => {
+      let violatorSub = innerSelect("section_meetings")
+        .select(sql`1`.as("one"))
+        .whereRef("section_meetings.section_id", "=", "sections.id");
 
-          if (p.in_person_only === "true") {
-            meetSub = meetSub
-              .where("section_meetings.location", "!=", "ONLINE")
-              .where("section_meetings.location", "!=", "OFF CAMPUS");
-          }
+      violatorSub = violatorSub.where((eb: any) => {
+        const violations: any[] = [];
 
-          for (const day of dayFilters) {
-            const start = parseInt(
-              p[`${day}StartTime` as keyof SectionFilterParams]!
+        for (const day of DAYS) {
+          if (!dayFilters.includes(day)) {
+            violations.push(
+              eb(
+                `section_meetings.${day}_meeting_start` as any,
+                "is not",
+                null
+              )
             );
-            const end = parseInt(
-              p[`${day}EndTime` as keyof SectionFilterParams]!
-            );
-            const startCol = `section_meetings.${day}_meeting_start` as any;
-            const endCol = `section_meetings.${day}_meeting_end` as any;
-
-            // Interval-overlap semantics: the section's meeting on this day
-            // must overlap the requested [start, end) window, not be fully
-            // contained within it. A section meeting from 8:50-9:40 AM
-            // should match a 9:00-11:00 AM search window even though it
-            // starts before 9:00 AM.
-            meetSub = meetSub
-              .where(startCol, "is not", null)
-              .where(endCol, "is not", null)
-              .where(startCol, "<", end)
-              .where(endCol, ">", start);
           }
+        }
 
-          return meetSub;
-        })()
-      )
-    );
+        for (const day of dayFilters) {
+          const start = parseInt(
+            p[`${day}StartTime` as keyof SectionFilterParams]!
+          );
+          const end = parseInt(
+            p[`${day}EndTime` as keyof SectionFilterParams]!
+          );
+          const startCol = `section_meetings.${day}_meeting_start` as any;
+          const endCol = `section_meetings.${day}_meeting_end` as any;
+
+          if (end > start) {
+            violations.push(
+              eb.and([
+                eb(startCol, "is not", null),
+                eb.or([eb(startCol, ">=", end), eb(endCol, "<=", start)]),
+              ])
+            );
+          } else {
+            // UTC wrapping: window is [start, MAX) ∪ [0, end).
+            // Outside both sub-intervals: end_col <= start AND start_col >= end
+            violations.push(
+              eb.and([
+                eb(startCol, "is not", null),
+                eb(endCol, "<=", start),
+                eb(startCol, ">=", end),
+              ])
+            );
+          }
+        }
+
+        return eb.or(violations);
+      });
+
+      return sql`NOT EXISTS (${violatorSub})`;
+    });
   }
 
   return sub;

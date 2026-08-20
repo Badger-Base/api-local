@@ -46,6 +46,8 @@ export async function hydrateCourses(
       "courses.level",
       "courses.typically_offered",
       "courses.workplace_experience_description",
+      "courses.grading_basis_description",
+      "courses.open_to_first_year",
       "courses.repeatable_for_credit",
       "madgrades_course_grades.cumulative_gpa",
       "madgrades_course_grades.most_recent_gpa",
@@ -60,7 +62,6 @@ export async function hydrateCourses(
       "madgrades_course_grades.course_uuid as madgrades_course_uuid",
     ])
     .where("courses.id", "in", courseIds)
-    .orderBy("courses.catalog_number", "asc")
     .execute();
 
   const courseIdList = courses.map((c) => c.id);
@@ -82,6 +83,8 @@ export async function hydrateCourses(
           )
           .select([
             "sections.id",
+            "sections.section_id",
+            "sections.section_uuid",
             "sections.course_ref",
             "sections.status",
             "sections.available_seats",
@@ -107,6 +110,8 @@ export async function hydrateCourses(
           .where("sections.course_ref", "in", courseIdList)
           .groupBy([
             "sections.id",
+            "sections.section_id",
+            "sections.section_uuid",
             "sections.course_ref",
             "sections.status",
             "sections.available_seats",
@@ -161,6 +166,16 @@ export async function hydrateCourses(
             "section_meetings.building_name",
             "section_meetings.room",
             "section_meetings.location",
+            "section_meetings.monday_meeting_start",
+            "section_meetings.monday_meeting_end",
+            "section_meetings.tuesday_meeting_start",
+            "section_meetings.tuesday_meeting_end",
+            "section_meetings.wednesday_meeting_start",
+            "section_meetings.wednesday_meeting_end",
+            "section_meetings.thursday_meeting_start",
+            "section_meetings.thursday_meeting_end",
+            "section_meetings.friday_meeting_start",
+            "section_meetings.friday_meeting_end",
           ])
           .where("section_meetings.section_id", "in", sectionIds)
           .orderBy("section_meetings.meeting_number")
@@ -200,6 +215,16 @@ export async function hydrateCourses(
       building_name: mtg.building_name,
       room: mtg.room,
       location: mtg.location,
+      monday_meeting_start: mtg.monday_meeting_start,
+      monday_meeting_end: mtg.monday_meeting_end,
+      tuesday_meeting_start: mtg.tuesday_meeting_start,
+      tuesday_meeting_end: mtg.tuesday_meeting_end,
+      wednesday_meeting_start: mtg.wednesday_meeting_start,
+      wednesday_meeting_end: mtg.wednesday_meeting_end,
+      thursday_meeting_start: mtg.thursday_meeting_start,
+      thursday_meeting_end: mtg.thursday_meeting_end,
+      friday_meeting_start: mtg.friday_meeting_start,
+      friday_meeting_end: mtg.friday_meeting_end,
     });
     meetingsBySection.set(mtg.section_id, list);
   }
@@ -209,7 +234,8 @@ export async function hydrateCourses(
   for (const sec of sections) {
     const list = sectionsByCourse.get(sec.course_ref) ?? [];
     list.push({
-      section_id: sec.id,
+      section_id: sec.section_id,
+      section_uuid: sec.section_uuid,
       status: sec.status,
       available_seats: sec.available_seats,
       waitlist_total: sec.waitlist_total,
@@ -235,8 +261,12 @@ export async function hydrateCourses(
     sectionsByCourse.set(sec.course_ref, list);
   }
 
-  // Assemble final response
-  return courses.map(
+  // Assemble final response — preserve input courseIds order
+  const courseById = new Map(courses.map((c) => [c.id, c]));
+  return courseIds
+    .map((id) => courseById.get(id))
+    .filter((c) => c != null)
+    .map(
     (c): CourseResponse => ({
       course_uuid: c.course_uuid,
       course_id: c.course_id,
@@ -261,6 +291,8 @@ export async function hydrateCourses(
       level: c.level,
       typically_offered: c.typically_offered,
       workplace_experience_description: c.workplace_experience_description,
+      grading_basis_description: c.grading_basis_description,
+      open_to_first_year: c.open_to_first_year,
       repeatable_for_credit: c.repeatable_for_credit,
       cumulative_gpa: c.cumulative_gpa != null ? Number(c.cumulative_gpa) : null,
       most_recent_gpa:
