@@ -5,6 +5,9 @@ import Redis from "ioredis";
 import { createApp } from "./api.js";
 import { createSubscriptionApp, elasticEmailSender } from "./subscription_api.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
+import { createPgApp } from "./pg/routes/courses.ts";
+import { createDb } from "./pg/db.ts";
+import { createCache } from "./pg/cache.ts";
 
 const required = [
   "SUPABASE_JWT_SECRET",
@@ -12,6 +15,7 @@ const required = [
   "MYSQL_URL",
   "GET_API_KEY",
   "SUBSCRIPTION_API_KEY",
+  "DATABASE_URL",
 ] as const;
 for (const key of required) {
   if (!Bun.env[key]) {
@@ -50,6 +54,14 @@ app.route(
   createApp({ pool, redis, apiKey: Bun.env.GET_API_KEY })
 );
 
+const pgDb = createDb(Bun.env.DATABASE_URL!);
+const queryCache = createCache(redis);
+app.route(
+  "/v2",
+  createPgApp({ db: pgDb, cache: queryCache, apiKey: Bun.env.GET_API_KEY! })
+);
+
+// Subscription routes stay on MySQL for now (separate migration).
 app.route(
   "/",
   createSubscriptionApp({
@@ -66,10 +78,10 @@ Bun.serve({ port, fetch: app.fetch });
 console.log(`BadgerBase API running on port ${port}`);
 
 process.on("SIGINT", async () => {
-  await Promise.all([pool.end(), redis.quit()]);
+  await Promise.all([pool.end(), redis.quit(), pgDb?.destroy()]);
   process.exit(0);
 });
 process.on("SIGTERM", async () => {
-  await Promise.all([pool.end(), redis.quit()]);
+  await Promise.all([pool.end(), redis.quit(), pgDb?.destroy()]);
   process.exit(0);
 });
