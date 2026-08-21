@@ -149,10 +149,10 @@ export const fixture: TestFixture = {
   ],
 
   madgrades_course_grades: [
-    { id: 1, course_name: "COMP SCI 200", course_uuid: "mg-cs200", median_grade: "AB", a_percentage: 35.0, ab_percentage: 25.0, b_percentage: 20.0, bc_percentage: 10.0, c_percentage: 5.0, d_percentage: 3.0, f_percentage: 2.0, cumulative_gpa: 3.40, most_recent_gpa: 3.50 },
-    { id: 2, course_name: "COMP SCI 400", course_uuid: "mg-cs400", median_grade: "B", a_percentage: 20.0, ab_percentage: 20.0, b_percentage: 25.0, bc_percentage: 15.0, c_percentage: 10.0, d_percentage: 5.0, f_percentage: 5.0, cumulative_gpa: 2.90, most_recent_gpa: 2.85 },
-    { id: 3, course_name: "MATH 221", course_uuid: "mg-math221", median_grade: "BC", a_percentage: 15.0, ab_percentage: 15.0, b_percentage: 20.0, bc_percentage: 20.0, c_percentage: 15.0, d_percentage: 10.0, f_percentage: 5.0, cumulative_gpa: 2.60, most_recent_gpa: 2.55 },
-    { id: 4, course_name: "COMP SCI 577", course_uuid: "mg-cs577", median_grade: "B", a_percentage: 25.0, ab_percentage: 20.0, b_percentage: 25.0, bc_percentage: 15.0, c_percentage: 10.0, d_percentage: 3.0, f_percentage: 2.0, cumulative_gpa: 3.10, most_recent_gpa: 3.00 },
-    { id: 5, course_name: "COMP SCI 302", course_uuid: "mg-cs302", median_grade: "AB", a_percentage: 30.0, ab_percentage: 30.0, b_percentage: 20.0, bc_percentage: 10.0, c_percentage: 5.0, d_percentage: 3.0, f_percentage: 2.0, cumulative_gpa: 3.30, most_recent_gpa: 3.35 },
+    { id: 1, course_name: "COMP SCI 200", course_uuid: "mg-cs200", median_grade: "AB", a_percentage: 0.35, ab_percentage: 0.25, b_percentage: 0.20, bc_percentage: 0.10, c_percentage: 0.05, d_percentage: 0.03, f_percentage: 0.02, cumulative_gpa: 3.40, most_recent_gpa: 3.50 },
+    { id: 2, course_name: "COMP SCI 400", course_uuid: "mg-cs400", median_grade: "B", a_percentage: 0.20, ab_percentage: 0.20, b_percentage: 0.25, bc_percentage: 0.15, c_percentage: 0.10, d_percentage: 0.05, f_percentage: 0.05, cumulative_gpa: 2.90, most_recent_gpa: 2.85 },
+    { id: 3, course_name: "MATH 221", course_uuid: "mg-math221", median_grade: "BC", a_percentage: 0.15, ab_percentage: 0.15, b_percentage: 0.20, bc_percentage: 0.20, c_percentage: 0.15, d_percentage: 0.10, f_percentage: 0.05, cumulative_gpa: 2.60, most_recent_gpa: 2.55 },
+    { id: 4, course_name: "COMP SCI 577", course_uuid: "mg-cs577", median_grade: "B", a_percentage: 0.25, ab_percentage: 0.20, b_percentage: 0.25, bc_percentage: 0.15, c_percentage: 0.10, d_percentage: 0.03, f_percentage: 0.02, cumulative_gpa: 3.10, most_recent_gpa: 3.00 },
+    { id: 5, course_name: "COMP SCI 302", course_uuid: "mg-cs302", median_grade: "AB", a_percentage: 0.30, ab_percentage: 0.30, b_percentage: 0.20, bc_percentage: 0.10, c_percentage: 0.05, d_percentage: 0.03, f_percentage: 0.02, cumulative_gpa: 3.30, most_recent_gpa: 3.35 },
   ],
 };

@@ -54,7 +54,7 @@ describe("hydrateCourses", () => {
     const courses = await hydrateCourses(testDb.db, [1]);
     expect(courses[0].cumulative_gpa).toBe(3.4);
     expect(courses[0].median_grade).toBe("AB");
-    expect(courses[0].a_percent).toBe(35.0);
+    expect(courses[0].a_percent).toBe(0.35);
   });
 
   it("handles multiple course IDs", async () => {
