@@ -6,6 +6,7 @@ import { createApp } from "./api.js";
 import { createSubscriptionApp, elasticEmailSender } from "./subscription_api.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
 import { createPgApp } from "./pg/routes/courses.ts";
+import { createPgSubscriptionApp } from "./pg/routes/subscriptions.ts";
 import { createDb } from "./pg/db.ts";
 import { createCache } from "./pg/cache.ts";
 
@@ -61,11 +62,22 @@ app.route(
   createPgApp({ db: pgDb, cache: queryCache, apiKey: Bun.env.GET_API_KEY! })
 );
 
-// Subscription routes stay on MySQL for now (separate migration).
+// v1 subscription routes (MySQL — kept until frontend migrates to /v2)
 app.route(
   "/",
   createSubscriptionApp({
     pool,
+    jwtSecret,
+    subscriptionApiKey: Bun.env.SUBSCRIPTION_API_KEY || "",
+    sendEmail: emailSender,
+    fromEmail: emailFromAddr,
+  })
+);
+
+app.route(
+  "/v2",
+  createPgSubscriptionApp({
+    db: pgDb,
     jwtSecret,
     subscriptionApiKey: Bun.env.SUBSCRIPTION_API_KEY || "",
     sendEmail: emailSender,

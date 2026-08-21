@@ -44,11 +44,27 @@ describe("grade filters", () => {
     expect(result).not.toContain("uuid-math221"); // 2.55
   });
 
-  it("min_a_percent filter", async () => {
-    const result = await queryWithGrades({ min_a_percent: "30" });
-    expect(result).toContain("uuid-cs200"); // 35%
-    expect(result).toContain("uuid-cs302"); // 30%
-    expect(result).not.toContain("uuid-cs400"); // 20%
+  it("min_a_percent filter (slider sends 0-1 fractions)", async () => {
+    const result = await queryWithGrades({ min_a_percent: "0.30" });
+    expect(result).toContain("uuid-cs200"); // 0.35
+    expect(result).toContain("uuid-cs302"); // 0.30
+    expect(result).not.toContain("uuid-cs400"); // 0.20
+    expect(result).not.toContain("uuid-math221"); // 0.15
+  });
+
+  it("min_a_percent=0.25 includes courses at or above 25%", async () => {
+    const result = await queryWithGrades({ min_a_percent: "0.25" });
+    expect(result).toContain("uuid-cs200"); // 0.35
+    expect(result).toContain("uuid-cs577"); // 0.25
+    expect(result).toContain("uuid-cs302"); // 0.30
+    expect(result).not.toContain("uuid-cs400"); // 0.20
+    expect(result).not.toContain("uuid-math221"); // 0.15
+  });
+
+  it("min_a_percent=0.36 excludes courses just below threshold", async () => {
+    const result = await queryWithGrades({ min_a_percent: "0.36" });
+    expect(result).not.toContain("uuid-cs200"); // 0.35
+    expect(result).not.toContain("uuid-cs302"); // 0.30
   });
 
   it("median_grade filter", async () => {

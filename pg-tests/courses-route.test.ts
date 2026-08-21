@@ -115,4 +115,22 @@ describe("courses route", () => {
       expect(gpas[i - 1]).toBeGreaterThanOrEqual(gpas[i]);
     }
   });
+
+  it("min_a_percent filters using slider-scale fractions (0-1)", async () => {
+    const body = await query({ min_a_percent: "0.30" });
+    const uuids = body.data.map((c: any) => c.course_uuid);
+    expect(uuids).toContain("uuid-cs200"); // a_percentage=0.35
+    expect(uuids).toContain("uuid-cs302"); // a_percentage=0.30
+    expect(uuids).not.toContain("uuid-cs400"); // a_percentage=0.20
+    expect(uuids).not.toContain("uuid-math221"); // a_percentage=0.15
+    expect(body.total_count).toBeLessThan(5);
+  });
+
+  it("min_a_percent hydrated a_percent matches filter scale", async () => {
+    const body = await query({ min_a_percent: "0.30" });
+    for (const course of body.data) {
+      expect(course.a_percent).toBeGreaterThanOrEqual(0.30);
+      expect(course.a_percent).toBeLessThanOrEqual(1.0);
+    }
+  });
 });
