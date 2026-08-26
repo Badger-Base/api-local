@@ -26,7 +26,7 @@ async function queryWithFilters(params: Record<string, string>) {
 describe("course-level filters", () => {
   it("level filters single value", async () => {
     const result = await queryWithFilters({ level: "Advanced" });
-    expect(result).toEqual(["uuid-cs577"]);
+    expect(result).toEqual(["uuid-cs540", "uuid-cs577"]);
   });
 
   it("level filters comma-separated", async () => {
@@ -43,7 +43,7 @@ describe("course-level filters", () => {
 
   it("natural_science boolean filter", async () => {
     const result = await queryWithFilters({ natural_science: "true" });
-    expect(result).toEqual(["uuid-math221"]);
+    expect(result).toEqual(["uuid-math221", "uuid-stat240"]);
   });
 
   it("no_prereqs filter", async () => {
@@ -78,7 +78,15 @@ describe("course-level filters", () => {
     const result = await queryWithFilters({ l_and_s: "true" });
     // All fixture courses have letters_and_science_credits: true
     expect(result).toEqual(
-      ["uuid-cs200", "uuid-cs302", "uuid-cs400", "uuid-cs577", "uuid-math221"].sort()
+      [
+        "uuid-cs200",
+        "uuid-cs302",
+        "uuid-cs400",
+        "uuid-cs540",
+        "uuid-cs577",
+        "uuid-math221",
+        "uuid-stat240",
+      ].sort()
     );
   });
 
@@ -109,7 +117,7 @@ describe("course-level filters", () => {
 
   it("no filters returns all courses", async () => {
     const result = await queryWithFilters({});
-    expect(result.length).toBe(5);
+    expect(result.length).toBe(7);
   });
 
   it("multiple filters compose with AND", async () => {
@@ -126,6 +134,6 @@ describe("course-level filters", () => {
     // search_param is intentionally ignored by applyCourseFilters — it
     // should have no filtering effect here.
     const result = await queryWithFilters({ search_param: "Algorithms" });
-    expect(result.length).toBe(5);
+    expect(result.length).toBe(7);
   });
 });

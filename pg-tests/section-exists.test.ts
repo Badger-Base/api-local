@@ -64,7 +64,7 @@ describe("section EXISTS builder", () => {
 
   it("no section filters returns all courses", async () => {
     const result = await queryWithSectionFilters({});
-    expect(result.length).toBe(5);
+    expect(result.length).toBe(7);
   });
 
   // Schedule filter tests use NOT EXISTS (violating meeting) semantics:

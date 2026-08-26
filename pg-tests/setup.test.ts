@@ -28,8 +28,8 @@ describe("pg-tests setup", () => {
   it("seeds all subjects, courses, and sections", async () => {
     const courses = await testDb.db.selectFrom("courses").selectAll().execute();
     const sections = await testDb.db.selectFrom("sections").selectAll().execute();
-    expect(courses.length).toBe(5);
-    expect(sections.length).toBe(8);
+    expect(courses.length).toBe(7);
+    expect(sections.length).toBe(11);
   });
 
   it("links section_instructors to the correct sections", async () => {
