@@ -41,8 +41,17 @@ interface CourseRow {
  *
  * The inner query's WHERE clause exists to hit the GIN trigram indexes:
  * `ILIKE '%x%'` and the `%` similarity operator are both index-supported by
- * `gin_trgm_ops`. The outer query then applies the explicit floor, which
- * cannot live in the inner WHERE because it references the computed alias.
+ * `gin_trgm_ops` — but only against the bare column. A GIN index on
+ * `course_title` cannot serve a predicate on the *expression*
+ * `COALESCE(course_title, '')`, so the six prefilter predicates below use
+ * bare columns, not COALESCE-wrapped ones. This is result-preserving:
+ * `NULL ILIKE ...` and `NULL % ...` both evaluate to NULL, which an
+ * OR-chain treats the same as FALSE. The scoring CASE expressions above
+ * still use COALESCE — they run only on rows that already passed the
+ * prefilter, aren't index-servable regardless, and need COALESCE so
+ * `similarity(NULL, ...)` doesn't produce a NULL score. The outer query
+ * then applies the explicit floor, which cannot live in the inner WHERE
+ * because it references the computed alias.
  */
 export async function searchCourses(
   db: Kysely<Database>,
@@ -79,11 +88,11 @@ export async function searchCourses(
         ) AS score
       FROM courses c
       WHERE c.course_designation ILIKE ${containsPattern}
-         OR COALESCE(c.course_title, '') ILIKE ${containsPattern}
-         OR COALESCE(c.full_course_designation, '') ILIKE ${containsPattern}
+         OR c.course_title ILIKE ${containsPattern}
+         OR c.full_course_designation ILIKE ${containsPattern}
          OR c.course_designation % ${q}
-         OR COALESCE(c.course_title, '') % ${q}
-         OR COALESCE(c.full_course_designation, '') % ${q}
+         OR c.course_title % ${q}
+         OR c.full_course_designation % ${q}
     ) scored
     WHERE scored.score >= ${SIMILARITY_FLOOR}
     ORDER BY scored.score DESC, scored.catalog_number ASC NULLS LAST
