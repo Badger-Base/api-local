@@ -1,6 +1,6 @@
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { Database } from "../pg/types.ts";
@@ -11,7 +11,7 @@ import type { Database } from "../pg/types.ts";
 // raw `sql` rather than the Kysely query builder.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCHEMA_PATH = path.resolve(__dirname, "../schema/001_init.sql");
+const SCHEMA_DIR = path.resolve(__dirname, "../schema");
 
 export interface TestDb {
   db: Kysely<Database>;
@@ -30,25 +30,35 @@ export interface TestFixture {
 }
 
 /**
- * Ensures the schema from `schema/001_init.sql` exists on the target
- * database. No-ops if the `courses` table is already present (e.g. against
- * a shared/persistent test database), otherwise executes the full DDL file.
+ * Applies every `schema/NNN_*.sql` migration in filename order.
+ *
+ * `001_init.sql` is not idempotent, so it is skipped when `courses` already
+ * exists. Every later migration must be written with IF NOT EXISTS guards
+ * and is applied unconditionally — otherwise a persistent test database
+ * would never receive migrations added after it was first created.
  */
 async function ensureSchema(pool: pg.Pool): Promise<void> {
+  if (!existsSync(SCHEMA_DIR)) {
+    throw new Error(`Cannot initialize test schema: ${SCHEMA_DIR} not found.`);
+  }
+
+  const files = readdirSync(SCHEMA_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+
+  if (files.length === 0) {
+    throw new Error(`No .sql migrations found in ${SCHEMA_DIR}.`);
+  }
+
   const { rows } = await pool.query<{ reg: string | null }>(
     "SELECT to_regclass('public.courses') AS reg"
   );
-  if (rows[0]?.reg) return;
+  const baseSchemaExists = Boolean(rows[0]?.reg);
 
-  if (!existsSync(SCHEMA_PATH)) {
-    throw new Error(
-      `Cannot initialize test schema: ${SCHEMA_PATH} not found. ` +
-        `Ensure schema/001_init.sql is present or that DATABASE_URL points ` +
-        `at an already-initialized database.`
-    );
+  for (const file of files) {
+    if (file.startsWith("001_") && baseSchemaExists) continue;
+    await pool.query(readFileSync(path.join(SCHEMA_DIR, file), "utf-8"));
   }
-  const ddl = readFileSync(SCHEMA_PATH, "utf-8");
-  await pool.query(ddl);
 }
 
 export async function setupTestDb(): Promise<TestDb> {
