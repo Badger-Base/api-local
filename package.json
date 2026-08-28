@@ -9,7 +9,6 @@
     "hono": "^4.0.0",
     "ioredis": "^5.0.0",
     "kysely": "^0.29.5",
-    "mysql2": "^3.0.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {

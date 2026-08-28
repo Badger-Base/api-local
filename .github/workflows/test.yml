@@ -10,6 +10,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: badgerbase_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/badgerbase_test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,8 +37,5 @@ jobs:
 
       - run: bun install
 
-      - name: Unit tests
-        run: bun test api.test.js subscription_api.test.ts
-
-      - name: E2E tests
-        run: bun test api.e2e.test.js subscription_api.e2e.test.ts
+      - name: Tests
+        run: bun test
