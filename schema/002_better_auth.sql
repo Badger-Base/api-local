@@ -8,8 +8,8 @@
 --      lags the pinned library (1.7.2) and omits it.
 --
 -- user.id is text with no default (no gen_random_uuid()/uuid generator)
--- so that a later data-migration task can import existing Supabase UUIDs
--- as primary keys instead of better-auth minting new ones.
+-- because better-auth supplies the id itself from the application layer
+-- when it creates a user, rather than the database generating one.
 
 CREATE TABLE IF NOT EXISTS "user" (
   "id" text NOT NULL PRIMARY KEY,

@@ -35,7 +35,7 @@ describe("better-auth schema", () => {
     expect(await columns("account")).toContain("issuer");
   });
 
-  test("user.id is text with no default, so imports can supply Supabase UUIDs", async () => {
+  test("user.id is text with no default, so the application supplies it rather than the database", async () => {
     const r = await pool.query(
       `SELECT data_type, column_default FROM information_schema.columns
        WHERE table_schema='public' AND table_name='user' AND column_name='id'`
