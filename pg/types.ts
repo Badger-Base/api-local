@@ -247,3 +247,21 @@ export interface ApiQueryResponse {
   total_count: number;
   has_more: boolean;
 }
+
+// ── Search suggestion types ──
+
+export type SuggestionType = "course" | "instructor";
+
+export interface Suggestion {
+  type: SuggestionType;
+  /** Written into `search_param` when the suggestion is selected. */
+  value: string;
+  label: string;
+  sublabel: string | null;
+  /** Present for courses, null for instructors. */
+  course_uuid: string | null;
+}
+
+export interface SuggestResponse {
+  suggestions: Suggestion[];
+}

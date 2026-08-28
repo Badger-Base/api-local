@@ -4,6 +4,7 @@ export const fixture: TestFixture = {
   subjects: [
     { subject_code: "COMP SCI", footnotes: null },
     { subject_code: "MATH", footnotes: null },
+    { subject_code: "STAT", footnotes: null },
   ],
 
   courses: [
@@ -97,6 +98,42 @@ export const fixture: TestFixture = {
       grading_basis_description: "A-F",
       open_to_first_year: false, repeatable_for_credit: false,
     },
+    {
+      id: 6, course_id: "CS540", course_uuid: "uuid-cs540",
+      subject_code: "COMP SCI", course_designation: "COMP SCI 540",
+      full_course_designation: "COMP SCI 540 — Intro to Artificial Intelligence",
+      course_title: "Introduction to Artificial Intelligence", catalog_number: 540,
+      course_description: "AI fundamentals",
+      enrollment_prerequisites: "COMP SCI 300",
+      minimum_credits: 3, maximum_credits: 3,
+      letters_and_science_credits: true,
+      ethnic_studies: false, social_science: false, humanities: false,
+      biological_science: false, physical_science: false,
+      natural_science: false, literature: false,
+      general_education: null, level: "Advanced",
+      typically_offered: "Fall, Spring",
+      workplace_experience_description: null,
+      grading_basis_description: "A-F",
+      open_to_first_year: false, repeatable_for_credit: false,
+    },
+    {
+      id: 7, course_id: "STAT240", course_uuid: "uuid-stat240",
+      subject_code: "STAT", course_designation: "STAT 240",
+      full_course_designation: "STAT 240 — Data Science Modeling I",
+      course_title: "Introduction to Data Modeling I", catalog_number: 240,
+      course_description: "Statistical modeling",
+      enrollment_prerequisites: "None",
+      minimum_credits: 4, maximum_credits: 4,
+      letters_and_science_credits: true,
+      ethnic_studies: false, social_science: false, humanities: false,
+      biological_science: false, physical_science: false,
+      natural_science: true, literature: false,
+      general_education: null, level: "Elementary",
+      typically_offered: "Fall, Spring",
+      workplace_experience_description: null,
+      grading_basis_description: "A-F",
+      open_to_first_year: true, repeatable_for_credit: false,
+    },
   ],
 
   // Section IDs (id) are the FK target for instructors/meetings
@@ -112,6 +149,9 @@ export const fixture: TestFixture = {
     { id: 6, section_id: "LEC001", section_uuid: "suuid-6", course_ref: 4, status: "CLOSED", available_seats: 0, waitlist_total: 20, capacity: 100, enrolled: 100, instruction_mode: "In Person", is_asynchronous: false, section_requisites: null },
     { id: 7, section_id: "LEC001", section_uuid: "suuid-7", course_ref: 5, status: "OPEN", available_seats: 25, waitlist_total: 0, capacity: 100, enrolled: 75, instruction_mode: "In Person", is_asynchronous: false, section_requisites: null },
     { id: 8, section_id: "DIS301", section_uuid: "suuid-8", course_ref: 1, status: "OPEN", available_seats: 20, waitlist_total: 0, capacity: 30, enrolled: 10, instruction_mode: "In Person", is_asynchronous: false, section_requisites: null },
+    { id: 9, section_id: "LEC001", section_uuid: "suuid-9", course_ref: 6, status: "OPEN", available_seats: 10, waitlist_total: 0, capacity: 120, enrolled: 110, instruction_mode: "In Person", is_asynchronous: false, section_requisites: null },
+    { id: 10, section_id: "LEC002", section_uuid: "suuid-10", course_ref: 6, status: "OPEN", available_seats: 5, waitlist_total: 0, capacity: 120, enrolled: 115, instruction_mode: "In Person", is_asynchronous: false, section_requisites: null },
+    { id: 11, section_id: "LEC001", section_uuid: "suuid-11", course_ref: 7, status: "OPEN", available_seats: 40, waitlist_total: 0, capacity: 200, enrolled: 160, instruction_mode: "In Person", is_asynchronous: false, section_requisites: null },
   ],
 
   // CS200 sec 1 (OPEN): taught by Bad Prof (rating 2.0)
@@ -126,6 +166,9 @@ export const fixture: TestFixture = {
     { section_ref: 6, instructor_name: "Algo Expert" },
     { section_ref: 7, instructor_name: "Data Scientist" },
     { section_ref: 8, instructor_name: "TA Person" },
+    { section_ref: 9, instructor_name: "Jim Williams" },
+    { section_ref: 10, instructor_name: "Jim Williams" },
+    { section_ref: 11, instructor_name: "Jim Williams" },
   ],
 
   section_meetings: [

@@ -138,7 +138,13 @@ Not yet implemented in filtering (parameter is accepted but unused in WHERE clau
 
 ### `search_param`
 
-Free-text search across `course_designation`, `course_title`, `full_course_designation`, and `instructor_name`. Uses `LIKE %value%` matching.
+Free-text search across `course_designation`, `course_title`,
+`full_course_designation`, and `instructor_name`. Uses `ILIKE %value%`
+matching — substring only, no fuzzy matching.
+
+For typo-tolerant matching, see `GET /api/search/suggest` below. That
+endpoint powers the autocomplete dropdown; `search_param` still performs the
+literal filtered query.
 
 ## Sorting
 
@@ -167,3 +173,80 @@ Results per page. Default: `10`.
 - **OR** within comma-separated status values: `OPEN,WAITLISTED` is OR.
 - **AND** within breadth requirements: `humanities + literature` is AND.
 - Status is a **course-level** concept — sections are never removed from the response. You always see all sections of every matched course.
+
+---
+
+# GET /api/search/suggest — Autocomplete
+
+Returns ranked search suggestions for the search box. Served from the v2
+(Postgres) API at `/v2/api/search/suggest`. Requires the same `x-api-key`
+header as `/api/query`.
+
+## Parameters
+
+| Param | Required | Default | Notes |
+|---|---|---|---|
+| `q` | yes | — | Trimmed. Under 2 characters returns an empty list with HTTP 200. |
+| `limit` | no | `8` | Clamped to `[1, 10]`. Non-numeric falls back to `8`. |
+
+## Response
+
+```json
+{
+  "suggestions": [
+    {
+      "type": "course",
+      "value": "COMP SCI 200",
+      "label": "COMP SCI 200",
+      "sublabel": "Programming I",
+      "course_uuid": "uuid-cs200"
+    },
+    {
+      "type": "instructor",
+      "value": "Jim Williams",
+      "label": "Jim Williams",
+      "sublabel": "Instructor · 3 sections",
+      "course_uuid": null
+    }
+  ]
+}
+```
+
+`value` is what the client writes into `search_param`. `course_uuid` is null
+for instructor suggestions.
+
+## Matching and ranking
+
+Matches on `course_designation`, `course_title`, `full_course_designation`,
+and `section_instructors.instructor_name` using `pg_trgm` trigram similarity
+with GIN indexes.
+
+Each field scores in one of three tiers, and a row takes its best field score:
+
+| Tier | Condition | Score |
+|---|---|---|
+| Prefix | field starts with `q` | `2.0 + similarity` |
+| Substring | field contains `q` | `1.0 + similarity` |
+| Fuzzy | `similarity >= 0.3` | `similarity` |
+
+Rows below `0.3` similarity with no substring match are excluded. The 1.0
+tier spacing exceeds the maximum possible similarity, so a prefix match can
+never be outranked by a fuzzy one.
+
+Courses and instructors are queried separately and merged by score. If the
+merged top-`limit` contains no instructor but one qualified, the
+lowest-scoring course is swapped for the best instructor.
+
+Instructors are deduplicated by name; `sublabel` reports how many sections
+they teach.
+
+## Caching
+
+Redis, namespace `pg:suggest:`, 300s TTL. Cache failures degrade to a miss.
+
+## Notes
+
+- **Empty results are not errors.** Over-short, unmatched, and whitespace-only
+  queries all return `200` with `{"suggestions": []}`.
+- **`search_param` on `/api/query` is unchanged** — it remains substring-only
+  `ILIKE`. This endpoint does not affect it.

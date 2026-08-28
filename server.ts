@@ -7,6 +7,7 @@ import { createSubscriptionApp, elasticEmailSender } from "./subscription_api.ts
 import { ALLOWED_ORIGINS } from "./middleware.ts";
 import { createPgApp } from "./pg/routes/courses.ts";
 import { createPgSubscriptionApp } from "./pg/routes/subscriptions.ts";
+import { createPgSearchApp } from "./pg/routes/search.ts";
 import { createDb } from "./pg/db.ts";
 import { createCache } from "./pg/cache.ts";
 
@@ -57,9 +58,18 @@ app.route(
 
 const pgDb = createDb(Bun.env.DATABASE_URL!);
 const queryCache = createCache(redis);
+// Suggestions get their own namespace and a much shorter TTL: the text
+// tracks the catalog, and 5 minutes bounds staleness after an ETL run.
+const suggestCache = createCache(redis, { prefix: "pg:suggest:", ttl: 300 });
+
 app.route(
   "/v2",
   createPgApp({ db: pgDb, cache: queryCache, apiKey: Bun.env.GET_API_KEY! })
+);
+
+app.route(
+  "/v2",
+  createPgSearchApp({ db: pgDb, cache: suggestCache, apiKey: Bun.env.GET_API_KEY! })
 );
 
 // v1 subscription routes (MySQL — kept until frontend migrates to /v2)
