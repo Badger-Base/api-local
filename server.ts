@@ -23,7 +23,6 @@ import { createCache } from "./pg/cache.ts";
 import { auth } from "./auth.ts";
 
 const required = [
-  "SUPABASE_JWT_SECRET",
   "REDIS_URL",
   "GET_API_KEY",
   "SUBSCRIPTION_API_KEY",
@@ -37,7 +36,7 @@ for (const key of required) {
   }
 }
 
-const jwtSecret = Bun.env.SUPABASE_JWT_SECRET!;
+const jwksUrl = `${Bun.env.BETTER_AUTH_URL ?? "http://localhost:3002"}/api/auth/jwks`;
 
 const redis = new Redis(Bun.env.REDIS_URL);
 
@@ -78,7 +77,7 @@ app.route(
   "/v2",
   createPgSubscriptionApp({
     db: pgDb,
-    jwtSecret,
+    jwksUrl,
     subscriptionApiKey: Bun.env.SUBSCRIPTION_API_KEY || "",
     sendEmail: emailSender,
     fromEmail: emailFromAddr,
