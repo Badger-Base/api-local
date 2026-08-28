@@ -29,6 +29,16 @@ async function signedInToken(): Promise<string> {
   return (t as any).token;
 }
 
+// A syntactically well-formed JWS (three base64url segments, valid JSON
+// header/payload) whose signature is never checked in these tests, because
+// the JWKS fetch itself fails before jose gets to signature verification.
+function wellFormedToken(): string {
+  const b64url = (obj: object) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const header = b64url({ alg: "EdDSA", kid: "test-kid" });
+  const payload = b64url({ sub: "test-user", email: "test@wisc.edu" });
+  return `${header}.${payload}.fake-signature`;
+}
+
 describe("betterAuthJwt", () => {
   test("rejects a request with no Authorization header", async () => {
     const res = await protectedApp().request("http://localhost/protected");
@@ -51,5 +61,45 @@ describe("betterAuthJwt", () => {
     const body = await res.json();
     expect(typeof body.payload.sub).toBe("string");
     expect(typeof body.payload.email).toBe("string");
+  });
+
+  test("returns 500 (not 401), with no internal error detail, when the JWKS endpoint is unreachable", async () => {
+    // Grab an ephemeral port and immediately free it, guaranteeing nothing
+    // is listening there for the middleware to fetch from.
+    const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+    const deadPort = probe.port;
+    probe.stop(true);
+
+    const app = new Hono();
+    app.use("/protected", betterAuthJwt(`http://localhost:${deadPort}/jwks`));
+    app.get("/protected", (c) => c.json({ payload: c.get("jwtPayload") }));
+
+    const res = await app.request("http://localhost/protected", {
+      headers: { Authorization: `Bearer ${wellFormedToken()}` },
+    });
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Internal Server Error" });
+  });
+
+  test("returns 500 (not 401), with no internal error detail, when the JWKS endpoint returns non-200", async () => {
+    const badJwksApp = new Hono();
+    badJwksApp.get("/jwks", (c) => c.text("service unavailable", 503));
+    const server = Bun.serve({ port: 0, fetch: badJwksApp.fetch });
+
+    const app = new Hono();
+    app.use("/protected", betterAuthJwt(`http://localhost:${server.port}/jwks`));
+    app.get("/protected", (c) => c.json({ payload: c.get("jwtPayload") }));
+
+    const res = await app.request("http://localhost/protected", {
+      headers: { Authorization: `Bearer ${wellFormedToken()}` },
+    });
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Internal Server Error" });
+
+    server.stop(true);
   });
 });
