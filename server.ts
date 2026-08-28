@@ -8,6 +8,19 @@ import { createPgSubscriptionApp } from "./pg/routes/subscriptions.ts";
 import { createPgSearchApp } from "./pg/routes/search.ts";
 import { createDb } from "./pg/db.ts";
 import { createCache } from "./pg/cache.ts";
+// NOTE: this is a static import, so ES module semantics evaluate auth.ts's
+// top-level code (including its own throw if AUTH_DATABASE_URL is unset)
+// before any of this module's own code below runs — regardless of where
+// this import line sits textually. That happens before the `required` loop
+// below ever executes, so AUTH_DATABASE_URL is deliberately NOT added to
+// `required`: it would be dead code, since a missing AUTH_DATABASE_URL
+// already crashes the process via auth.ts's own clear error message prior
+// to reaching this point. BETTER_AUTH_SECRET is different — better-auth
+// does not validate it eagerly at construction (confirmed empirically), so
+// importing `auth` succeeds even when it's unset, and it's only used later
+// when a request actually hits /api/auth/*. Adding it to `required` below
+// still gives a clean startup failure in that case.
+import { auth } from "./auth.ts";
 
 const required = [
   "SUPABASE_JWT_SECRET",
@@ -15,6 +28,7 @@ const required = [
   "GET_API_KEY",
   "SUBSCRIPTION_API_KEY",
   "DATABASE_URL",
+  "BETTER_AUTH_SECRET",
 ] as const;
 for (const key of required) {
   if (!Bun.env[key]) {
@@ -40,6 +54,9 @@ const app = new Hono();
 app.use("/*", cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// better-auth owns everything under /api/auth/* — sign-in, sign-up, JWKS.
+app.all("/api/auth/*", (c) => auth.handler(c.req.raw));
 
 const pgDb = createDb(Bun.env.DATABASE_URL!);
 const queryCache = createCache(redis);
