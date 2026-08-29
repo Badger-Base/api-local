@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { jwt, magicLink } from "better-auth/plugins";
 import { Pool } from "pg";
 import { elasticEmailSender } from "./email.ts";
+import { ALLOWED_ORIGINS } from "./middleware.ts";
 
 /**
  * BadgerBase identity provider. Uses better-auth's native scrypt hashing —
@@ -26,6 +27,13 @@ export const auth = betterAuth({
   }),
   secret: process.env.BETTER_AUTH_SECRET!,
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3002",
+  // better-auth validates every request's callbackURL (e.g. the frontend's
+  // authClient.signIn.magicLink({ callbackURL })) against this list and
+  // rejects with INVALID_CALLBACK_URL if it isn't present — this is not
+  // redundant with CORS, it's a separate check. Reuses the CORS allowlist
+  // from middleware.ts rather than duplicating it, since that is already
+  // exactly the set of origins allowed to talk to this API.
+  trustedOrigins: ALLOWED_ORIGINS,
   emailAndPassword: {
     enabled: true,
   },
