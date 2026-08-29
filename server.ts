@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import Redis from "ioredis";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
-import { elasticEmailSender } from "./email.ts";
+import { smtpSender } from "./email.ts";
 import { createPgApp } from "./pg/routes/courses.ts";
 import { createPgSubscriptionApp } from "./pg/routes/subscriptions.ts";
 import { createPgSearchApp } from "./pg/routes/search.ts";
@@ -40,12 +40,11 @@ const jwksUrl = `${Bun.env.BETTER_AUTH_URL ?? "http://localhost:3002"}/api/auth/
 
 const redis = new Redis(Bun.env.REDIS_URL);
 
-const emailFromAddr = Bun.env.FROM_EMAIL || Bun.env.SES_FROM_EMAIL;
-const elasticApiKey = Bun.env.ELASTICEMAIL_API_KEY;
+const emailFromAddr = Bun.env.SMTP_FROM || "notifications@badgerbase.app";
 const emailSender =
-  emailFromAddr && elasticApiKey
+  Bun.env.SMTP_HOST
     ? (to: string, subject: string, html: string) =>
-        elasticEmailSender(emailFromAddr, elasticApiKey, to, subject, html)
+        smtpSender(emailFromAddr, to, subject, html)
     : undefined;
 
 const app = new Hono();
