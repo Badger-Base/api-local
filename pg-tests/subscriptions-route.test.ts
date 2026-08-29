@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import { Hono } from "hono";
 import { auth } from "../auth.ts";
-import { setupTestDb, type TestDb } from "./setup.ts";
+import { setupTestDb, markEmailVerified, type TestDb } from "./setup.ts";
 import { fixture } from "./fixtures/default.ts";
 import { createPgSubscriptionApp } from "../pg/routes/subscriptions.ts";
 
@@ -25,6 +25,8 @@ async function signedInToken(email: string): Promise<string> {
     body: { email, password: "test-password-123", name: "T" },
     asResponse: false,
   });
+  // requireEmailVerification is on, so sign-in would 403 without this.
+  await markEmailVerified(email);
   const res = await auth.api.signInEmail({
     body: { email, password: "test-password-123" },
     asResponse: true,

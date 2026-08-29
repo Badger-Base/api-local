@@ -139,3 +139,36 @@ export async function setupTestDb(): Promise<TestDb> {
 
   return { db, seed, teardown };
 }
+
+/**
+ * Marks a better-auth user's email as verified.
+ *
+ * `auth.ts` sets `emailAndPassword.requireEmailVerification`, so a freshly
+ * signed-up user is rejected at sign-in with 403 EMAIL_NOT_VERIFIED until
+ * they click the emailed link. Tests that need a real session flip the
+ * column directly rather than round-tripping a verification token through
+ * an email sender that is deliberately unconfigured in this environment.
+ *
+ * This writes to AUTH_DATABASE_URL, not TEST_DATABASE_URL — better-auth's
+ * tables live in the auth database, which is a separate pool from the one
+ * `setupTestDb` returns.
+ */
+export async function markEmailVerified(email: string): Promise<void> {
+  const connectionString = process.env.AUTH_DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("AUTH_DATABASE_URL env var is required to run pg-tests");
+  }
+
+  const pool = new pg.Pool({ connectionString });
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE "user" SET "emailVerified" = true WHERE "email" = $1',
+      [email]
+    );
+    if (rowCount === 0) {
+      throw new Error(`markEmailVerified: no user with email ${email}`);
+    }
+  } finally {
+    await pool.end();
+  }
+}

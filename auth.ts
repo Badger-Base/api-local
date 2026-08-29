@@ -21,6 +21,40 @@ if (!authDatabaseUrl) {
   );
 }
 
+/**
+ * Rewrites an emailed auth link so it points at the frontend's own origin
+ * rather than this API's.
+ *
+ * better-auth builds these links from its own `baseURL`, which in production
+ * is the Railway host. The magic-link verify endpoint calls `setSessionCookie`
+ * on whatever origin serves it, so a link the user clicks on the Railway host
+ * sets the session cookie on the Railway host — a different registrable
+ * domain from badgerbase.app / sconniegrades.com, so the browser drops it and
+ * the user lands back on the site still signed out. Pointing the link at the
+ * frontend routes the click through its same-origin /api/auth proxy
+ * (BadgerBaseFrontend app/api/auth/[...all]/route.ts), which relays the
+ * Set-Cookie first-party. Only the origin is swapped; the path, token, and
+ * callbackURL are untouched, and the request reaches this same handler.
+ *
+ * With APP_URL unset (local dev, where the API and frontend are same-site
+ * anyway) the link is left exactly as better-auth built it.
+ */
+export function toFirstPartyAuthUrl(url: string): string {
+  const appUrl = process.env.APP_URL;
+  if (!appUrl) return url;
+  try {
+    const rewritten = new URL(url);
+    const app = new URL(appUrl);
+    rewritten.protocol = app.protocol;
+    rewritten.host = app.host;
+    return rewritten.toString();
+  } catch {
+    // A malformed APP_URL must not take down sign-in; send the original link.
+    console.error("APP_URL is not a valid URL; sending the unrewritten link");
+    return url;
+  }
+}
+
 export const auth = betterAuth({
   database: new Pool({
     connectionString: authDatabaseUrl,
@@ -36,6 +70,41 @@ export const auth = betterAuth({
   trustedOrigins: ALLOWED_ORIGINS,
   emailAndPassword: {
     enabled: true,
+    // Supabase required email confirmation before an account could be used;
+    // better-auth defaults this off, which silently dropped that guarantee.
+    // It matters more here than usual: course/section subscriptions are keyed
+    // by email address with no foreign key to the users table, so without
+    // verification anyone could register victim@wisc.edu, never confirm it,
+    // and read or delete that person's notification list.
+    requireEmailVerification: true,
+  },
+  emailVerification: {
+    // Enabling requireEmailVerification above makes better-auth send this on
+    // sign-up (see sign-up.mjs: `sendOnSignUp ?? requireEmailVerification`)
+    // and makes sign-in reject unverified users with 403 EMAIL_NOT_VERIFIED,
+    // which the frontend's app/login/page.tsx already handles.
+    //
+    // Same sender and same unconfigured-env behavior as sendMagicLink below:
+    // throw rather than silently pretend the mail went out. Note the
+    // asymmetry in how better-auth treats that throw -- sendMagicLink's
+    // rejection fails the request, but this one is invoked through
+    // `runInBackgroundOrAwait`, which catches and only logs. So with the
+    // email vars unset, sign-up still succeeds (returning token: null) and
+    // the error shows up in the server log, not in the API response.
+    sendVerificationEmail: async ({ user, url }) => {
+      const from = process.env.FROM_EMAIL ?? process.env.SES_FROM_EMAIL;
+      const key = process.env.ELASTICEMAIL_API_KEY;
+      if (!from || !key)
+        throw new Error("verification email is not configured");
+      const link = toFirstPartyAuthUrl(url);
+      await elasticEmailSender(
+        from,
+        key,
+        user.email,
+        "Confirm your BadgerBase email",
+        `<p>Click to confirm your email address: <a href="${link}">${link}</a></p>`
+      );
+    },
   },
   plugins: [
     jwt(),
@@ -46,12 +115,15 @@ export const auth = betterAuth({
         const from = process.env.FROM_EMAIL ?? process.env.SES_FROM_EMAIL;
         const key = process.env.ELASTICEMAIL_API_KEY;
         if (!from || !key) throw new Error("magic link email is not configured");
+        // Must go through the frontend proxy: /magic-link/verify sets the
+        // session cookie on whichever origin serves it.
+        const link = toFirstPartyAuthUrl(url);
         await elasticEmailSender(
           from,
           key,
           email,
           "Sign in to BadgerBase",
-          `<p>Click to sign in: <a href="${url}">${url}</a></p>`
+          `<p>Click to sign in: <a href="${link}">${link}</a></p>`
         );
       },
     }),

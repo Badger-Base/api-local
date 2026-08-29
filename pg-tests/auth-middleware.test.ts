@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll } from "bun:test";
 import { Hono } from "hono";
 import { auth } from "../auth.ts";
 import { betterAuthJwt } from "../auth-middleware.ts";
+import { markEmailVerified } from "./setup.ts";
 
 // Serve better-auth (and therefore its JWKS) on a real port so the middleware
 // can fetch the key set exactly as it will in production.
@@ -23,6 +24,8 @@ function protectedApp() {
 async function signedInToken(): Promise<string> {
   const email = `jwt-${crypto.randomUUID()}@wisc.edu`;
   await auth.api.signUpEmail({ body: { email, password: "test-password-123", name: "T" }, asResponse: false });
+  // requireEmailVerification is on, so sign-in would 403 without this.
+  await markEmailVerified(email);
   const res = await auth.api.signInEmail({ body: { email, password: "test-password-123" }, asResponse: true });
   const cookie = (res.headers.getSetCookie?.() ?? []).map((c: string) => c.split(";")[0]).join("; ");
   const t = await auth.api.getToken({ headers: new Headers({ cookie }) });
