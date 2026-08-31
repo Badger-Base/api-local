@@ -32,7 +32,7 @@
   `/magic-link/verify` sets the session cookie on the Railway host — a
   different registrable domain — so magic-link sign-in appears to succeed and
   leaves the user signed out.
-- API: `ELASTICEMAIL_API_KEY` and `FROM_EMAIL` set in Railway. These are now
+- API: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` set in Railway (self-hosted Mox at mail.badgerbase.app). These are now
   required in practice, not optional — see "Email verification is required".
 - `trustedOrigins` in `api-local/auth.ts` (currently reused from
   `ALLOWED_ORIGINS` in `middleware.ts`) must include the frontend's
@@ -59,7 +59,7 @@ security control rather than a nicety: subscriptions are keyed by email with
 no foreign key to the users table, so an unverified account for someone
 else's address would expose that person's notification list.
 
-That makes `ELASTICEMAIL_API_KEY` and `FROM_EMAIL` **operationally required**
+That makes the `SMTP_*` variables **operationally required**
 in production even though the server starts without them. better-auth invokes
 `sendVerificationEmail` through `runInBackgroundOrAwait`, which catches and
 only logs a failure — so with those vars unset, sign-up returns a cheerful

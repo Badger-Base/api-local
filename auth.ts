@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { jwt, magicLink } from "better-auth/plugins";
 import { Pool } from "pg";
-import { elasticEmailSender } from "./email.ts";
+import { sendEmail } from "./email.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
 
 /**
@@ -92,14 +92,8 @@ export const auth = betterAuth({
     // email vars unset, sign-up still succeeds (returning token: null) and
     // the error shows up in the server log, not in the API response.
     sendVerificationEmail: async ({ user, url }) => {
-      const from = process.env.FROM_EMAIL ?? process.env.SES_FROM_EMAIL;
-      const key = process.env.ELASTICEMAIL_API_KEY;
-      if (!from || !key)
-        throw new Error("verification email is not configured");
       const link = toFirstPartyAuthUrl(url);
-      await elasticEmailSender(
-        from,
-        key,
+      await sendEmail(
         user.email,
         "Confirm your BadgerBase email",
         `<p>Click to confirm your email address: <a href="${link}">${link}</a></p>`
@@ -112,15 +106,10 @@ export const auth = betterAuth({
     // here. Dropping it would silently remove a login method users rely on.
     magicLink({
       sendMagicLink: async ({ email, url }) => {
-        const from = process.env.FROM_EMAIL ?? process.env.SES_FROM_EMAIL;
-        const key = process.env.ELASTICEMAIL_API_KEY;
-        if (!from || !key) throw new Error("magic link email is not configured");
         // Must go through the frontend proxy: /magic-link/verify sets the
         // session cookie on whichever origin serves it.
         const link = toFirstPartyAuthUrl(url);
-        await elasticEmailSender(
-          from,
-          key,
+        await sendEmail(
           email,
           "Sign in to BadgerBase",
           `<p>Click to sign in: <a href="${link}">${link}</a></p>`
