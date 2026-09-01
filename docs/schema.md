@@ -194,7 +194,7 @@ Source: `subscription_api.ts`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INT | AUTO_INCREMENT PRIMARY KEY | (inferred) |
-| email | VARCHAR | NOT NULL | User email, from Supabase JWT |
+| email | VARCHAR | NOT NULL | User email, from better-auth JWT |
 | course_id | VARCHAR | NOT NULL | FK → courses.course_id |
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | (inferred) |
 
@@ -206,7 +206,7 @@ Source: `subscription_api.ts`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INT | AUTO_INCREMENT PRIMARY KEY | (inferred) |
-| email | VARCHAR | NOT NULL | User email, from Supabase JWT |
+| email | VARCHAR | NOT NULL | User email, from better-auth JWT |
 | section_id | VARCHAR | NOT NULL | FK → sections.section_id |
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | (inferred) |
 

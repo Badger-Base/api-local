@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import { sign } from "hono/jwt";
-import { setupTestDb, type TestDb } from "./setup.ts";
+import { Hono } from "hono";
+import { auth } from "../auth.ts";
+import { setupTestDb, markEmailVerified, type TestDb } from "./setup.ts";
 import { fixture } from "./fixtures/default.ts";
 import { createPgSubscriptionApp } from "../pg/routes/subscriptions.ts";
 
@@ -8,21 +9,48 @@ let testDb: TestDb;
 let app: ReturnType<typeof createPgSubscriptionApp>;
 
 const API_KEY = "test-sub-key";
-const JWT_SECRET = "test-jwt-secret";
-const TEST_EMAIL = "student@wisc.edu";
+// Unique per run: the local test database is persistent (not
+// truncated between test runs like TEST_DATABASE_URL), so a fixed literal
+// email would collide with a prior run's user on the unique constraint.
+const TEST_EMAIL = `student-${crypto.randomUUID()}@wisc.edu`;
 
 let validToken: string;
+let baseUrl: string;
+
+// Serve better-auth (and therefore its JWKS) on a real port so the
+// middleware can fetch the key set exactly as it will in production.
+// Mirrors the pattern in pg-tests/auth-middleware.test.ts.
+async function signedInToken(email: string): Promise<string> {
+  await auth.api.signUpEmail({
+    body: { email, password: "test-password-123", name: "T" },
+    asResponse: false,
+  });
+  // requireEmailVerification is on, so sign-in would 403 without this.
+  await markEmailVerified(email);
+  const res = await auth.api.signInEmail({
+    body: { email, password: "test-password-123" },
+    asResponse: true,
+  });
+  const cookie = (res.headers.getSetCookie?.() ?? [])
+    .map((c: string) => c.split(";")[0])
+    .join("; ");
+  const t = await auth.api.getToken({ headers: new Headers({ cookie }) });
+  return (t as any).token;
+}
 
 beforeAll(async () => {
   testDb = await setupTestDb();
-  validToken = await sign(
-    { sub: "user-123", email: TEST_EMAIL },
-    JWT_SECRET,
-  );
+
+  const authApp = new Hono();
+  authApp.all("/api/auth/*", (c) => auth.handler(c.req.raw));
+  const server = Bun.serve({ port: 0, fetch: authApp.fetch });
+  baseUrl = `http://localhost:${server.port}`;
+
+  validToken = await signedInToken(TEST_EMAIL);
 
   app = createPgSubscriptionApp({
     db: testDb.db,
-    jwtSecret: JWT_SECRET,
+    jwksUrl: `${baseUrl}/api/auth/jwks`,
     subscriptionApiKey: API_KEY,
   });
 });
@@ -334,7 +362,7 @@ describe("email integration", () => {
     const sent: { to: string; subject: string }[] = [];
     const appWithEmail = createPgSubscriptionApp({
       db: testDb.db,
-      jwtSecret: JWT_SECRET,
+      jwksUrl: `${baseUrl}/api/auth/jwks`,
       subscriptionApiKey: API_KEY,
       sendEmail: async (to, subject) => {
         sent.push({ to, subject });
@@ -360,7 +388,7 @@ describe("email integration", () => {
   it("does not fail if sendEmail throws", async () => {
     const appWithBrokenEmail = createPgSubscriptionApp({
       db: testDb.db,
-      jwtSecret: JWT_SECRET,
+      jwksUrl: `${baseUrl}/api/auth/jwks`,
       subscriptionApiKey: API_KEY,
       sendEmail: async () => {
         throw new Error("SMTP down");

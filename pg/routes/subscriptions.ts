@@ -1,12 +1,12 @@
 import { Hono, type Context } from "hono";
-import { jwt } from "hono/jwt";
 import type { Kysely } from "kysely";
 import type { Database } from "../types.ts";
 import { apiKeyAuth } from "../../middleware.ts";
+import { betterAuthJwt } from "../../auth-middleware.ts";
 
 interface PgSubscriptionDeps {
   db: Kysely<Database>;
-  jwtSecret: string;
+  jwksUrl: string;
   subscriptionApiKey: string;
   sendEmail?: (to: string, subject: string, htmlBody: string) => Promise<void>;
   fromEmail?: string;
@@ -14,7 +14,7 @@ interface PgSubscriptionDeps {
 
 export function createPgSubscriptionApp({
   db,
-  jwtSecret,
+  jwksUrl,
   subscriptionApiKey,
   sendEmail,
   fromEmail,
@@ -27,7 +27,7 @@ export function createPgSubscriptionApp({
     "/subscriptions",
   ]) {
     app.use(path, apiKeyAuth(subscriptionApiKey));
-    app.use(path, jwt({ secret: jwtSecret }));
+    app.use(path, betterAuthJwt(jwksUrl));
   }
 
   function getAuth(c: Context) {
