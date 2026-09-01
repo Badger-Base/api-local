@@ -42,6 +42,14 @@ export async function sendEmail(
   subject: string,
   htmlBody: string
 ): Promise<void> {
+  // Never open a real SMTP connection from the test suite. Bun sets
+  // NODE_ENV=test, and without this guard every auth test that triggers a
+  // magic link or a verification email dials the production mail server and
+  // hangs until the test times out — which is exactly what happened once
+  // SMTP_HOST appeared in .env.
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
   if (!isEmailConfigured()) {
     throw new Error("email is not configured: SMTP_HOST is unset");
   }

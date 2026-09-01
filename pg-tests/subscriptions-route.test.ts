@@ -9,7 +9,7 @@ let testDb: TestDb;
 let app: ReturnType<typeof createPgSubscriptionApp>;
 
 const API_KEY = "test-sub-key";
-// Unique per run: AUTH_DATABASE_URL is a persistent local database (not
+// Unique per run: the local test database is persistent (not
 // truncated between test runs like TEST_DATABASE_URL), so a fixed literal
 // email would collide with a prior run's user on the unique constraint.
 const TEST_EMAIL = `student-${crypto.randomUUID()}@wisc.edu`;

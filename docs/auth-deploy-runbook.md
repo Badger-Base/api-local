@@ -4,8 +4,6 @@
 - Tasks 1–9 merged; full test suites green (`bun test` in api-local,
   `npx vitest run` in BadgerBaseFrontend — the 3 pre-existing
   `__tests__/tokens.test.ts` failures are unrelated to auth and are expected).
-- API: `BETTER_AUTH_SECRET` and `AUTH_DATABASE_URL` set explicitly in Railway.
-  `AUTH_DATABASE_URL` has no fallback to `DATABASE_URL` — `auth.ts` throws at
   import time and the server refuses to start without it.
 - Frontend: `AUTH_UPSTREAM_URL` set in Vercel **before** the first production
   build, pointing at this API (e.g.
@@ -95,7 +93,7 @@ plugin, wired in `api-local/auth.ts`) — the user clicks a link, not a
 
 ## Production cutover
 1. Confirm `AUTH_UPSTREAM_URL` and a `/v2`-suffixed `SUBSCRIPTION_URL` are
-   set in Vercel and `BETTER_AUTH_SECRET` / `AUTH_DATABASE_URL` are set in
+   set in Vercel and `BETTER_AUTH_SECRET` is set in
    Railway, ahead of the deploy (see Preconditions — these are hard failures,
    not warnings).
 2. Apply the schema migration to production Postgres.

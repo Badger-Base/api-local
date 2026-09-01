@@ -149,14 +149,13 @@ export async function setupTestDb(): Promise<TestDb> {
  * column directly rather than round-tripping a verification token through
  * an email sender that is deliberately unconfigured in this environment.
  *
- * This writes to AUTH_DATABASE_URL, not TEST_DATABASE_URL — better-auth's
- * tables live in the auth database, which is a separate pool from the one
- * `setupTestDb` returns.
+ * This opens its own pool rather than reusing the one `setupTestDb` returns;
+ * better-auth's tables live in the same database, just a different pool.
  */
 export async function markEmailVerified(email: string): Promise<void> {
-  const connectionString = process.env.AUTH_DATABASE_URL;
+  const connectionString = process.env.TEST_DATABASE_URL;
   if (!connectionString) {
-    throw new Error("AUTH_DATABASE_URL env var is required to run pg-tests");
+    throw new Error("TEST_DATABASE_URL env var is required to run pg-tests");
   }
 
   const pool = new pg.Pool({ connectionString });

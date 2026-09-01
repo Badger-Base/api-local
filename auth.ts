@@ -8,16 +8,25 @@ import { ALLOWED_ORIGINS } from "./middleware.ts";
  * BadgerBase identity provider. Uses better-auth's native scrypt hashing —
  * there is no migration, so there are no foreign password hashes to verify.
  *
- * AUTH_DATABASE_URL is deliberately separate from DATABASE_URL: the latter
- * points at production, and schema tooling must never default to it. There
- * is no fallback to DATABASE_URL — production sets AUTH_DATABASE_URL
- * explicitly (opted in), rather than inheriting it implicitly.
+ * better-auth's tables live in the same Postgres as courses and
+ * subscriptions, so this uses DATABASE_URL — there is no separate auth
+ * database.
+ *
+ * Under `bun test` Bun sets NODE_ENV=test, and this resolves
+ * TEST_DATABASE_URL instead. That is the one thing worth being careful
+ * about here: DATABASE_URL points at production, and the suite signs users
+ * up for real, so without this branch running the tests would create
+ * accounts in the production database.
  */
-const authDatabaseUrl = process.env.AUTH_DATABASE_URL;
+const isTestEnv = process.env.NODE_ENV === "test";
+const authDatabaseUrl = isTestEnv
+  ? process.env.TEST_DATABASE_URL
+  : process.env.DATABASE_URL;
 if (!authDatabaseUrl) {
   throw new Error(
-    "AUTH_DATABASE_URL is required and must be set explicitly — it must not " +
-      "be inherited from DATABASE_URL (which points at production)."
+    isTestEnv
+      ? "TEST_DATABASE_URL is required to run the test suite (NODE_ENV=test)."
+      : "DATABASE_URL is required."
   );
 }
 
