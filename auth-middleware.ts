@@ -27,7 +27,13 @@ export function betterAuthJwt(jwksUrl: string) {
     } catch (err) {
       if (isTokenValidationError(err)) {
         // Malformed/expired/mis-signed token, or a kid that isn't in the
-        // (possibly just-refreshed) key set -- the caller's fault.
+        // (possibly just-refreshed) key set -- the caller's fault. Logged
+        // because it is otherwise indistinguishable from an api-key
+        // rejection: same status, same body, and neither said anything.
+        const e = err as { code?: string; message?: string };
+        console.error(
+          `[auth] token rejected: ${e?.code ?? "unknown"} ${e?.message ?? ""}`.trim()
+        );
         return c.json({ error: "Unauthorized" }, 401);
       }
       // Anything else means we failed to fetch or parse our own JWKS
