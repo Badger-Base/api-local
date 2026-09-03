@@ -1,11 +1,19 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import pg from "pg";
+import { ensureSchema } from "./setup.ts";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 if (!connectionString) throw new Error("TEST_DATABASE_URL is required");
 
 let pool: pg.Pool;
-beforeAll(() => { pool = new pg.Pool({ connectionString }); });
+beforeAll(async () => {
+  pool = new pg.Pool({ connectionString });
+  // Apply the migrations rather than assuming another test file ran first.
+  // Without this the suite passed locally, where these tables already
+  // existed, and failed in CI against a fresh database — which is exactly
+  // how it went unnoticed.
+  await ensureSchema(pool);
+});
 afterAll(async () => { await pool.end(); });
 
 async function columns(table: string): Promise<string[]> {
