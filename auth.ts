@@ -5,6 +5,33 @@ import { sendEmail } from "./email.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
 
 /**
+ * Sends without ever blocking the caller.
+ *
+ * better-auth invokes these callbacks through `runInBackgroundOrAwait`, which
+ * under Bun kept the sign-up request open until the send finished. With an
+ * unreachable mail server that meant sign-up hung, the frontend proxy timed
+ * out at 10s, and the user saw "failed to create account" for an account that
+ * had in fact been created.
+ *
+ * Delivery is best-effort by nature — the user is told to check their inbox
+ * either way — so a failure here is logged, never surfaced as a failed sign-up.
+ */
+function sendInBackground(
+  kind: string,
+  to: string,
+  subject: string,
+  html: string
+): void {
+  void sendEmail(to, subject, html).catch((err) => {
+    console.error(
+      `[auth] ${kind} email to ${to} failed:`,
+      (err as NodeJS.ErrnoException)?.code ?? "",
+      (err as Error)?.message ?? String(err)
+    );
+  });
+}
+
+/**
  * BadgerBase identity provider. Uses better-auth's native scrypt hashing —
  * there is no migration, so there are no foreign password hashes to verify.
  *
@@ -102,7 +129,8 @@ export const auth = betterAuth({
     // the error shows up in the server log, not in the API response.
     sendVerificationEmail: async ({ user, url }) => {
       const link = toFirstPartyAuthUrl(url);
-      await sendEmail(
+      sendInBackground(
+        "verification",
         user.email,
         "Confirm your BadgerBase email",
         `<p>Click to confirm your email address: <a href="${link}">${link}</a></p>`
@@ -118,7 +146,8 @@ export const auth = betterAuth({
         // Must go through the frontend proxy: /magic-link/verify sets the
         // session cookie on whichever origin serves it.
         const link = toFirstPartyAuthUrl(url);
-        await sendEmail(
+        sendInBackground(
+          "magic-link",
           email,
           "Sign in to BadgerBase",
           `<p>Click to sign in: <a href="${link}">${link}</a></p>`
