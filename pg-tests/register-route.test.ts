@@ -72,3 +72,11 @@ describe("POST /api/register", () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe("verification link destination", () => {
+  test("auto sign-in after verification is enabled", async () => {
+    const { auth } = await import("../auth.ts");
+    const ctx = await auth.$context;
+    expect(ctx.options.emailVerification?.autoSignInAfterVerification).toBe(true);
+  });
+});
