@@ -6,6 +6,11 @@ import { describe, test, expect } from "bun:test";
  */
 async function loadWith(value: string | undefined): Promise<string | Error> {
   const prev = process.env.BETTER_AUTH_URL;
+  // A public BETTER_AUTH_URL now requires a public APP_URL: emailed links
+  // are rewritten to it, and a localhost value sends users to their own
+  // machine. Set one so these cases exercise the base-URL rules alone.
+  const prevApp = process.env.APP_URL;
+  process.env.APP_URL = "https://www.badgerbase.app";
   if (value === undefined) delete process.env.BETTER_AUTH_URL;
   else process.env.BETTER_AUTH_URL = value;
   try {
@@ -16,6 +21,8 @@ async function loadWith(value: string | undefined): Promise<string | Error> {
   } finally {
     if (prev === undefined) delete process.env.BETTER_AUTH_URL;
     else process.env.BETTER_AUTH_URL = prev;
+    if (prevApp === undefined) delete process.env.APP_URL;
+    else process.env.APP_URL = prevApp;
   }
 }
 

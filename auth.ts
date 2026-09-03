@@ -118,6 +118,41 @@ if (!authDatabaseUrl) {
  * With APP_URL unset (local dev, where the API and frontend are same-site
  * anyway) the link is left exactly as better-auth built it.
  */
+/**
+ * Guards APP_URL against the mistake that shipped it: it was left at
+ * http://localhost:3000 in production, so every verification and magic link
+ * emailed to a real user pointed at their own machine. Nobody could verify,
+ * and nothing failed loudly — the mail sent perfectly, it just led nowhere.
+ *
+ * The rule is self-consistent rather than environment-sniffing: if this API's
+ * own base URL is public, the app it links to must be public too. Locally
+ * both are localhost and nothing fires.
+ */
+function assertAppUrlMatchesDeployment(appUrl: string | undefined): void {
+  const apiIsPublic = !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(
+    authBaseUrl
+  );
+  if (!apiIsPublic) return;
+
+  if (!appUrl) {
+    throw new Error(
+      "APP_URL is required when BETTER_AUTH_URL is a public address. " +
+        "Without it, emailed verification and magic links point at this API " +
+        "instead of the frontend, and the session cookie lands on the wrong " +
+        "origin."
+    );
+  }
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(appUrl)) {
+    throw new Error(
+      `APP_URL is set to a local address (${appUrl}) while BETTER_AUTH_URL ` +
+        `is public (${authBaseUrl}). Emailed links would point at the ` +
+        "recipient's own machine. Set it to the frontend's public origin."
+    );
+  }
+}
+
+assertAppUrlMatchesDeployment(process.env.APP_URL);
+
 export function toFirstPartyAuthUrl(url: string): string {
   const appUrl = process.env.APP_URL;
   if (!appUrl) return url;
