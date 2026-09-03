@@ -26,7 +26,7 @@ export function createPgSubscriptionApp({
     "/section-subscription",
     "/subscriptions",
   ]) {
-    app.use(path, apiKeyAuth(subscriptionApiKey));
+    app.use(path, apiKeyAuth(subscriptionApiKey, "subscription"));
     app.use(path, betterAuthJwt(jwksUrl));
   }
 
