@@ -6,12 +6,23 @@ function getTransporter(): nodemailer.Transporter {
   if (!transporter) {
     transporter = nodemailer.createTransport({
       host: Bun.env.SMTP_HOST,
-      port: parseInt(Bun.env.SMTP_PORT || "465"),
+      port: parseInt(Bun.env.SMTP_PORT || "2525"),
       secure: true,
       auth: {
         user: Bun.env.SMTP_USER,
         pass: Bun.env.SMTP_PASS,
       },
+      // Fail fast. nodemailer defaults to a two-minute connection timeout,
+      // and better-auth's sendVerificationEmail did not reliably run in the
+      // background under Bun — so an unreachable mail server held the whole
+      // sign-up request open until the frontend proxy gave up at 10s and
+      // returned 502. The account was created; the user just saw a failure.
+      // Five seconds is far longer than a healthy send and well under that
+      // 10s budget, so a broken mail server degrades sign-up instead of
+      // breaking it.
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 10000,
     });
   }
   return transporter;
