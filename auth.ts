@@ -193,6 +193,11 @@ export const auth = betterAuth({
     requireEmailVerification: true,
   },
   emailVerification: {
+    // Clicking the emailed link previously verified the address and then
+    // dropped the user on the site still signed out, with nothing to say it
+    // had worked. They had to guess that it had, and go and sign in.
+    autoSignInAfterVerification: true,
+
     // Enabling requireEmailVerification above makes better-auth send this on
     // sign-up (see sign-up.mjs: `sendOnSignUp ?? requireEmailVerification`)
     // and makes sign-in reject unverified users with 403 EMAIL_NOT_VERIFIED,

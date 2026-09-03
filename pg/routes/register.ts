@@ -39,7 +39,12 @@ export function createRegisterApp({ databaseUrl, apiKey }: RegisterAppDeps) {
   app.use("/api/*", apiKeyAuth(apiKey));
 
   app.post("/api/register", async (c) => {
-    let body: { email?: string; password?: string; name?: string };
+    let body: {
+      email?: string;
+      password?: string;
+      name?: string;
+      callbackURL?: string;
+    };
     try {
       body = await c.req.json();
     } catch {
@@ -67,14 +72,24 @@ export function createRegisterApp({ databaseUrl, apiKey }: RegisterAppDeps) {
       if (existing.rowCount) {
         // Exists but unverified: the case that stranded people. Send a fresh
         // link rather than silently doing nothing.
-        await auth.api.sendVerificationEmail({ body: { email } });
+        await auth.api.sendVerificationEmail({
+          body: { email, callbackURL: body.callbackURL },
+        });
         return c.json({
           outcome: "VERIFICATION_RESENT" satisfies RegisterOutcome,
         });
       }
 
       await auth.api.signUpEmail({
-        body: { email, password: body.password, name: body.name },
+        body: {
+          email,
+          password: body.password,
+          name: body.name,
+          // Where the emailed link lands after verifying. Passed through from
+          // the frontend so it can show a confirmation rather than dropping
+          // the user on the home page with no indication anything happened.
+          callbackURL: body.callbackURL,
+        },
         asResponse: false,
       });
       return c.json({ outcome: "CREATED" satisfies RegisterOutcome });
