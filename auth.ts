@@ -180,6 +180,24 @@ export const auth = betterAuth({
       );
     },
   },
+  advanced: {
+    ipAddress: {
+      // The frontend proxy sets x-client-ip to a single address (the one
+      // Vercel observed) and strips any inbound value, so it is the only
+      // header here that carries one unambiguous IP.
+      //
+      // better-auth's default is x-forwarded-for, but it only trusts that
+      // header when it holds exactly one address. Requests arrive via Vercel
+      // and then Railway, so it is always a list and gets discarded — leaving
+      // every user sharing a single rate-limit bucket, which better-auth warns
+      // about on boot. Configuring trustedProxies instead would mean tracking
+      // Vercel's egress CIDRs, which are not static.
+      //
+      // x-forwarded-for is kept as a fallback for direct callers, where it is
+      // a single address and genuinely is the client.
+      ipAddressHeaders: ["x-client-ip", "x-forwarded-for"],
+    },
+  },
   plugins: [
     jwt(),
     // The Supabase setup offered OTP sign-in; magic links are the equivalent
