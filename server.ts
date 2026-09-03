@@ -6,6 +6,7 @@ import { sendEmail, emailFrom, isEmailConfigured } from "./email.ts";
 import { createPgApp } from "./pg/routes/courses.ts";
 import { createPgSubscriptionApp } from "./pg/routes/subscriptions.ts";
 import { createPgSearchApp } from "./pg/routes/search.ts";
+import { createRegisterApp } from "./pg/routes/register.ts";
 import { createDb } from "./pg/db.ts";
 import { createCache } from "./pg/cache.ts";
 // NOTE: this is a static import, so ES module semantics evaluate auth.ts's
@@ -59,6 +60,11 @@ const suggestCache = createCache(redis, { prefix: "pg:suggest:", ttl: 300 });
 app.route(
   "/v2",
   createPgApp({ db: pgDb, cache: queryCache, apiKey: Bun.env.GET_API_KEY! })
+);
+
+app.route(
+  "/v2",
+  createRegisterApp({ databaseUrl: Bun.env.DATABASE_URL!, apiKey: Bun.env.GET_API_KEY! })
 );
 
 app.route(
