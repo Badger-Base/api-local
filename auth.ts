@@ -45,6 +45,49 @@ function sendInBackground(
  * up for real, so without this branch running the tests would create
  * accounts in the production database.
  */
+/**
+ * Public base URL of this API.
+ *
+ * Validated here rather than left to better-auth, which throws
+ * `BetterAuthError: Invalid base URL` from inside its own module graph — a
+ * crash loop whose stack points at node_modules and never names the variable
+ * at fault. A scheme-less value like `api-local.railway.internal` is the easy
+ * mistake, and `required` in server.ts does not catch it because the variable
+ * IS set; it is just not a URL.
+ *
+ * It must also be the PUBLIC address. Railway's `*.railway.internal` names
+ * resolve only inside Railway's private network, so the frontend on Vercel
+ * cannot reach one, and better-auth builds links and checks origins against
+ * this value.
+ */
+export const authBaseUrl = (() => {
+  const raw = process.env.BETTER_AUTH_URL ?? "http://localhost:3002";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(
+      `BETTER_AUTH_URL is not a valid URL: ${JSON.stringify(raw)}. ` +
+        "It must include a scheme, e.g. https://api.example.com — a bare " +
+        "hostname will not parse."
+    );
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(
+      `BETTER_AUTH_URL must use http:// or https://, got ${parsed.protocol}`
+    );
+  }
+  if (parsed.hostname.endsWith(".railway.internal")) {
+    throw new Error(
+      `BETTER_AUTH_URL is set to a Railway private hostname (${parsed.hostname}). ` +
+        "It must be the public address of this API: better-auth builds " +
+        "emailed links and validates origins against it, and the frontend " +
+        "cannot resolve *.railway.internal from outside Railway's network."
+    );
+  }
+  return parsed.origin;
+})();
+
 const isTestEnv = process.env.NODE_ENV === "test";
 const authDatabaseUrl = isTestEnv
   ? process.env.TEST_DATABASE_URL
@@ -96,7 +139,7 @@ export const auth = betterAuth({
     connectionString: authDatabaseUrl,
   }),
   secret: process.env.BETTER_AUTH_SECRET!,
-  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3002",
+  baseURL: authBaseUrl,
   // better-auth validates every request's callbackURL (e.g. the frontend's
   // authClient.signIn.magicLink({ callbackURL })) against this list and
   // rejects with INVALID_CALLBACK_URL if it isn't present — this is not

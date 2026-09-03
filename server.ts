@@ -18,7 +18,7 @@ import { createCache } from "./pg/cache.ts";
 // importing `auth` succeeds even when it's unset, and it's only used later
 // when a request actually hits /api/auth/*. Adding it to `required` below
 // still gives a clean startup failure in that case.
-import { auth } from "./auth.ts";
+import { auth, authBaseUrl } from "./auth.ts";
 
 const required = [
   "REDIS_URL",
@@ -34,7 +34,7 @@ for (const key of required) {
   }
 }
 
-const jwksUrl = `${Bun.env.BETTER_AUTH_URL ?? "http://localhost:3002"}/api/auth/jwks`;
+const jwksUrl = new URL("/api/auth/jwks", authBaseUrl).toString();
 
 const redis = new Redis(Bun.env.REDIS_URL);
 
