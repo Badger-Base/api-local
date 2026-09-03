@@ -37,7 +37,7 @@ export interface TestFixture {
  * and is applied unconditionally — otherwise a persistent test database
  * would never receive migrations added after it was first created.
  */
-async function ensureSchema(pool: pg.Pool): Promise<void> {
+export async function ensureSchema(pool: pg.Pool): Promise<void> {
   if (!existsSync(SCHEMA_DIR)) {
     throw new Error(`Cannot initialize test schema: ${SCHEMA_DIR} not found.`);
   }
