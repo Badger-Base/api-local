@@ -52,6 +52,14 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 // better-auth owns everything under /api/auth/* — sign-in, sign-up, JWKS.
 app.all("/api/auth/*", (c) => auth.handler(c.req.raw));
 
+// better-auth also serves OAuth discovery metadata at bare `/.well-known/*`
+// paths (RFC 8414 authorization-server metadata, RFC 9728 protected-resource
+// metadata) — outside the /api/auth prefix, per those RFCs. Without this
+// route, the `resource_metadata` URL that /mcp's 401 WWW-Authenticate header
+// advertises 404s: a real MCP client following it hits a dead end instead of
+// a login prompt.
+app.all("/.well-known/*", (c) => auth.handler(c.req.raw));
+
 const pgDb = createDb(Bun.env.DATABASE_URL!);
 const queryCache = createCache(redis);
 // Suggestions get their own namespace and a much shorter TTL: the text

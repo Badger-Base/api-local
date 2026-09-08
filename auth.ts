@@ -91,6 +91,21 @@ export const authBaseUrl = (() => {
   return parsed.origin;
 })();
 
+/**
+ * The MCP resource identifier (RFC 8707) — the canonical URL this server's
+ * MCP endpoint is known as. Consumed at two independent sites: the `mcp()`
+ * plugin below (which issues tokens audience-bound to it and publishes it in
+ * protected-resource metadata) and `pg/mcp/server.ts`'s `requireMcpAuth`
+ * call (which checks incoming tokens against it). Both used to carry their
+ * own `?? "https://mcp.badgerbase.app/mcp"` literal and agreed only because
+ * the strings happened to match — a single source of truth here makes that
+ * drift impossible by construction instead of by coincidence. A token that
+ * validates against a resource identifier the authorization server never
+ * issued for fails as an opaque 401, which is miserable to debug.
+ */
+export const mcpResourceUrl =
+  process.env.MCP_RESOURCE_URL ?? "https://mcp.badgerbase.app/mcp";
+
 const isTestEnv = process.env.NODE_ENV === "test";
 const authDatabaseUrl = isTestEnv
   ? process.env.TEST_DATABASE_URL
@@ -269,7 +284,7 @@ export const auth = betterAuth({
     mcp({
       loginPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/login`,
       consentPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/consent`,
-      resource: process.env.MCP_RESOURCE_URL ?? "https://mcp.badgerbase.app/mcp",
+      resource: mcpResourceUrl,
     }),
     // Client ID Metadata Documents: lets MCP clients register by pointing at
     // an HTTPS URL that serves their own client metadata, instead of a

@@ -8,7 +8,7 @@ import type { Database } from "../types.ts";
 import type { QueryCache } from "../cache.ts";
 import { runCourseQuery } from "../query.ts";
 import { renderCourseResults } from "./render.ts";
-import { auth } from "../../auth.ts";
+import { auth, mcpResourceUrl } from "../../auth.ts";
 
 interface McpAppDeps {
   db: Kysely<Database>;
@@ -270,7 +270,7 @@ export function createMcpApp({ db, cache, requireAuth = true }: McpAppDeps): Hon
 
   const wrappedHandler = requireAuth
     ? requireMcpAuth(auth, rawHandler, {
-        resource: process.env.MCP_RESOURCE_URL ?? "https://mcp.badgerbase.app/mcp",
+        resource: mcpResourceUrl,
         issuer: process.env.BETTER_AUTH_URL ?? "http://localhost:3002",
       })
     : rawHandler;
