@@ -29,7 +29,9 @@ dependency setup.
 ## Question 1 — Can `loginPage`/`consentPage` be absolute URLs?
 
 **Asked:** BadgerBase's login UI lives on `badgerbase.app` (Next.js), while
-the authorization server is Hono on `api.badgerbase.app`. Does the plugin
+the authorization server is this same Hono API, deployed at its own public
+host (a different origin from the frontend — its exact hostname is whatever
+`BETTER_AUTH_URL` is set to in that environment). Does the plugin
 resolve `loginPage`/`consentPage` as paths relative to the auth server's own
 `baseURL`, or does it accept (and correctly redirect to) an absolute URL on a
 different origin?
@@ -319,12 +321,13 @@ in Task 9 — this is not a gap.
    non-empty path component (`/api/auth`), so it isn't a gap.
 
 **Conclusion for Task 9 / Task 10:** no alias route is needed. As long as
-the real deployment's issuer is `https://api.badgerbase.app/api/auth` (i.e.
-`baseURL` + the default `/api/auth` mount, with no `jwt().options.jwt.issuer`
-override pointing elsewhere), a spec-conforming MCP client that starts from
+the real deployment's issuer is `<baseURL>/api/auth` — that is, whatever
+public origin `BETTER_AUTH_URL` resolves to for that environment, plus the
+default `/api/auth` mount, with no `jwt().options.jwt.issuer` override
+pointing elsewhere — a spec-conforming MCP client that starts from
 `authorization_servers[0]` and applies RFC 8414 path-insertion will land on
-`https://api.badgerbase.app/.well-known/oauth-authorization-server/api/auth`,
-which resolves `200`. Task 9's assertions should include this exact path (in
-addition to the `/api/auth/.well-known/...` one from Question 2) since both
-are real, intentionally-served routes.
+`<baseURL>/.well-known/oauth-authorization-server/api/auth`, which resolves
+`200`. Task 9's assertions should include this exact path (in addition to
+the `/api/auth/.well-known/...` one from Question 2) since both are real,
+intentionally-served routes.
 

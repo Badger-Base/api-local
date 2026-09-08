@@ -252,12 +252,19 @@ async function handleMcpRequest(req: Request, db: Kysely<Database>, cache: Query
  * which verifies the bearer access token against better-auth's own JWKS and
  * responds with a 401 plus an RFC 9728 `WWW-Authenticate` header (naming the
  * protected-resource metadata URL) when it's missing or invalid — that
- * header is how an MCP client discovers where to authorize. `resource` and
- * `issuer` are passed explicitly rather than left to `requireMcpAuth`'s
- * defaults: those defaults resolve to this server's own base URL, which is
- * correct only when the resource and the authorization server share a host,
- * and here they deliberately do not (the authorization server is this API's
- * better-auth instance; the resource is the public MCP endpoint).
+ * header is how an MCP client discovers where to authorize. Only `resource`
+ * is passed explicitly; `issuer` and `jwksUrl` are left to `requireMcpAuth`'s
+ * defaults. `resource` must be overridden because its default is this
+ * server's own base URL, which is wrong here: the resource is the public MCP
+ * endpoint (`mcpResourceUrl`), a different host from this API. `issuer` and
+ * `jwksUrl` describe the authorization server instead, and the authorization
+ * server IS this API's better-auth instance regardless of what host the
+ * resource lives on — so `requireMcpAuth`'s defaults (both derived from
+ * `(await auth.$context).baseURL`) are already correct and must be left
+ * alone. Overriding `issuer` here previously pointed it at
+ * `BETTER_AUTH_URL` (an origin), while better-auth signs tokens with
+ * `ctx.context.baseURL` (that origin plus its `/api/auth` base path) as the
+ * `iss` claim — a mismatch that made `jwtVerify` reject every real token.
  *
  * `requireMcpAuth` is not Hono middleware — it wraps a `Request` handler and
  * returns a `Request` handler — so it's applied around `handleMcpRequest`
@@ -271,7 +278,6 @@ export function createMcpApp({ db, cache, requireAuth = true }: McpAppDeps): Hon
   const wrappedHandler = requireAuth
     ? requireMcpAuth(auth, rawHandler, {
         resource: mcpResourceUrl,
-        issuer: process.env.BETTER_AUTH_URL ?? "http://localhost:3002",
       })
     : rawHandler;
 
