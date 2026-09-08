@@ -7,6 +7,7 @@ import { createPgApp } from "./pg/routes/courses.ts";
 import { createPgSubscriptionApp } from "./pg/routes/subscriptions.ts";
 import { createPgSearchApp } from "./pg/routes/search.ts";
 import { createRegisterApp } from "./pg/routes/register.ts";
+import { createMcpApp } from "./pg/mcp/server.ts";
 import { createDb } from "./pg/db.ts";
 import { createCache } from "./pg/cache.ts";
 // NOTE: this is a static import, so ES module semantics evaluate auth.ts's
@@ -82,6 +83,8 @@ app.route(
     fromEmail: emailFromAddr,
   })
 );
+
+app.route("/mcp", createMcpApp({ db: pgDb, cache: queryCache }));
 
 const port = parseInt(Bun.env.PORT || "3000");
 Bun.serve({ port, fetch: app.fetch });
