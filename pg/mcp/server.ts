@@ -3,14 +3,23 @@ import type { Kysely } from "kysely";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { requireMcpAuth } from "@better-auth/mcp";
 import type { Database } from "../types.ts";
 import type { QueryCache } from "../cache.ts";
 import { runCourseQuery } from "../query.ts";
 import { renderCourseResults } from "./render.ts";
+import { auth } from "../../auth.ts";
 
 interface McpAppDeps {
   db: Kysely<Database>;
   cache: QueryCache;
+  /**
+   * Whether `/mcp` requires a valid OAuth access token. Defaults to `true`
+   * — this is the security property of this option: the production mount
+   * in `server.ts` gets authentication without opting in. Only tests that
+   * exercise transport/tool behaviour directly (not auth) opt out.
+   */
+  requireAuth?: boolean;
 }
 
 /**
@@ -211,36 +220,62 @@ function registerTools(server: McpServer, db: Kysely<Database>, cache: QueryCach
 }
 
 /**
- * Mounts the MCP Streamable HTTP transport at the app root (the caller
- * mounts this sub-app at `/mcp`). Runs stateless: `sessionIdGenerator` is
- * left undefined, so no session state is created, stored, or expired, and
- * a fresh `McpServer`/transport pair is built per request — the pattern the
- * SDK's own stateless example uses — since both are cheap to construct and
- * this avoids any state (initialization, in-flight streams) leaking or
- * colliding across unrelated requests.
- *
- * No auth is applied here; that lands in a later task. A transport bug is
- * therefore distinguishable from an auth bug during rollout.
+ * Handles one MCP Streamable HTTP request. Runs stateless:
+ * `sessionIdGenerator` is left undefined, so no session state is created,
+ * stored, or expired, and a fresh `McpServer`/transport pair is built per
+ * request — the pattern the SDK's own stateless example uses — since both
+ * are cheap to construct and this avoids any state (initialization,
+ * in-flight streams) leaking or colliding across unrelated requests.
  */
-export function createMcpApp({ db, cache }: McpAppDeps): Hono {
+async function handleMcpRequest(req: Request, db: Kysely<Database>, cache: QueryCache): Promise<Response> {
+  const server = new McpServer({ name: "badgerbase-mcp", version: "1.0.0" });
+  registerTools(server, db, cache);
+
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+
+  req.signal.addEventListener("abort", () => {
+    transport.close();
+    server.close();
+  });
+
+  await server.connect(transport);
+  return transport.handleRequest(req);
+}
+
+/**
+ * Mounts the MCP Streamable HTTP transport at the app root (the caller
+ * mounts this sub-app at `/mcp`).
+ *
+ * `requireAuth` (default `true`) wraps every request with `requireMcpAuth`,
+ * which verifies the bearer access token against better-auth's own JWKS and
+ * responds with a 401 plus an RFC 9728 `WWW-Authenticate` header (naming the
+ * protected-resource metadata URL) when it's missing or invalid — that
+ * header is how an MCP client discovers where to authorize. `resource` and
+ * `issuer` are passed explicitly rather than left to `requireMcpAuth`'s
+ * defaults: those defaults resolve to this server's own base URL, which is
+ * correct only when the resource and the authorization server share a host,
+ * and here they deliberately do not (the authorization server is this API's
+ * better-auth instance; the resource is the public MCP endpoint).
+ *
+ * `requireMcpAuth` is not Hono middleware — it wraps a `Request` handler and
+ * returns a `Request` handler — so it's applied around `handleMcpRequest`
+ * rather than mounted with `app.use`.
+ */
+export function createMcpApp({ db, cache, requireAuth = true }: McpAppDeps): Hono {
   const app = new Hono();
 
-  app.all("/", async (c) => {
-    const server = new McpServer({ name: "badgerbase-mcp", version: "1.0.0" });
-    registerTools(server, db, cache);
+  const rawHandler = (req: Request) => handleMcpRequest(req, db, cache);
 
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
+  const wrappedHandler = requireAuth
+    ? requireMcpAuth(auth, rawHandler, {
+        resource: process.env.MCP_RESOURCE_URL ?? "https://mcp.badgerbase.app/mcp",
+        issuer: process.env.BETTER_AUTH_URL ?? "http://localhost:3002",
+      })
+    : rawHandler;
 
-    c.req.raw.signal.addEventListener("abort", () => {
-      transport.close();
-      server.close();
-    });
-
-    await server.connect(transport);
-    return transport.handleRequest(c.req.raw);
-  });
+  app.all("/", (c) => wrappedHandler(c.req.raw));
 
   return app;
 }

@@ -12,6 +12,7 @@ beforeAll(async () => {
   app = createMcpApp({
     db: testDb.db,
     cache: { get: async () => null, set: async () => {}, bustAll: async () => {} },
+    requireAuth: false,
   });
 });
 afterAll(async () => {
