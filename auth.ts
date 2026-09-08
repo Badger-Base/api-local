@@ -279,8 +279,9 @@ export const auth = betterAuth({
     // plugin alongside it. loginPage/consentPage are absolute frontend URLs:
     // better-auth uses them verbatim as the redirect Location, with no
     // origin resolution against this server's own baseURL, so the frontend
-    // does not need to live on this same origin (docs/mcp-spike-findings.md,
-    // Question 1).
+    // does not need to live on this same origin. Verified against the plugin's
+    // own redirect construction: the configured value reaches the Location
+    // header verbatim, with no resolution against this server's baseURL.
     mcp({
       loginPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/login`,
       consentPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/consent`,
