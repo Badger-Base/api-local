@@ -43,6 +43,37 @@ describe("better-auth schema", () => {
     expect(await columns("account")).toContain("issuer");
   });
 
+  // The mcp()/cimd() plugins in auth.ts read and write these. Discovery
+  // serves without them because it is static metadata, so their absence
+  // stays invisible until a real client tries to register or exchange a
+  // token — which is why they get a schema assertion rather than being
+  // left to the first live authorization attempt to discover.
+  test("MCP OAuth provider tables exist", async () => {
+    const r = await pool.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema='public'`
+    );
+    const names = r.rows.map((x) => x.table_name);
+    for (const t of [
+      "oauthClient",
+      "oauthResource",
+      "oauthClientResource",
+      "oauthRefreshToken",
+      "oauthAccessToken",
+      "oauthConsent",
+      "oauthClientAssertion",
+    ]) {
+      expect(names).toContain(t);
+    }
+  });
+
+  test("oauthAccessToken keys back to the better-auth user and client", async () => {
+    const cols = await columns("oauthAccessToken");
+    for (const c of ["token", "clientId", "userId", "expiresAt", "scopes"]) {
+      expect(cols).toContain(c);
+    }
+  });
+
   test("user.id is text with no default, so the application supplies it rather than the database", async () => {
     const r = await pool.query(
       `SELECT data_type, column_default FROM information_schema.columns

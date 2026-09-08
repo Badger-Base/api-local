@@ -1,8 +1,11 @@
 import { betterAuth } from "better-auth";
 import { jwt, magicLink } from "better-auth/plugins";
+import { mcp } from "@better-auth/mcp";
+import { cimd } from "@better-auth/cimd";
 import { Pool } from "pg";
 import { sendEmail } from "./email.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
+import { fetchClientMetadataResource } from "./oauth-network.ts";
 
 /**
  * Sends without ever blocking the caller.
@@ -87,6 +90,21 @@ export const authBaseUrl = (() => {
   }
   return parsed.origin;
 })();
+
+/**
+ * The MCP resource identifier (RFC 8707) — the canonical URL this server's
+ * MCP endpoint is known as. Consumed at two independent sites: the `mcp()`
+ * plugin below (which issues tokens audience-bound to it and publishes it in
+ * protected-resource metadata) and `pg/mcp/server.ts`'s `requireMcpAuth`
+ * call (which checks incoming tokens against it). Both used to carry their
+ * own `?? "https://mcp.badgerbase.app/mcp"` literal and agreed only because
+ * the strings happened to match — a single source of truth here makes that
+ * drift impossible by construction instead of by coincidence. A token that
+ * validates against a resource identifier the authorization server never
+ * issued for fails as an opaque 401, which is miserable to debug.
+ */
+export const mcpResourceUrl =
+  process.env.MCP_RESOURCE_URL ?? "https://mcp.badgerbase.app/mcp";
 
 const isTestEnv = process.env.NODE_ENV === "test";
 const authDatabaseUrl = isTestEnv
@@ -254,6 +272,29 @@ export const auth = betterAuth({
           `<p>Click to sign in: <a href="${link}">${link}</a></p>`
         );
       },
+    }),
+    // Makes this auth server the MCP endpoint's OAuth authorization server.
+    // mcp() IS the OAuth provider (a thin wrapper around
+    // @better-auth/oauth-provider) — there is no separate oauthProvider
+    // plugin alongside it. loginPage/consentPage are absolute frontend URLs:
+    // better-auth uses them verbatim as the redirect Location, with no
+    // origin resolution against this server's own baseURL, so the frontend
+    // does not need to live on this same origin. Verified against the plugin's
+    // own redirect construction: the configured value reaches the Location
+    // header verbatim, with no resolution against this server's baseURL.
+    mcp({
+      loginPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/login`,
+      consentPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/consent`,
+      resource: mcpResourceUrl,
+    }),
+    // Client ID Metadata Documents: lets MCP clients register by pointing at
+    // an HTTPS URL that serves their own client metadata, instead of a
+    // separate registration call. fetchClientMetadataResource is this
+    // server's SSRF boundary for that fetch — see oauth-network.ts for why
+    // it isn't @better-auth/cimd's own packaged Node transport.
+    cimd({
+      fetchClientMetadataResource,
+      metadataProfile: "mcp-2026-07-28",
     }),
   ],
 });
