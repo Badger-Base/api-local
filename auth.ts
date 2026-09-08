@@ -1,8 +1,11 @@
 import { betterAuth } from "better-auth";
 import { jwt, magicLink } from "better-auth/plugins";
+import { mcp } from "@better-auth/mcp";
+import { cimd } from "@better-auth/cimd";
 import { Pool } from "pg";
 import { sendEmail } from "./email.ts";
 import { ALLOWED_ORIGINS } from "./middleware.ts";
+import { fetchClientMetadataResource } from "./oauth-network.ts";
 
 /**
  * Sends without ever blocking the caller.
@@ -254,6 +257,28 @@ export const auth = betterAuth({
           `<p>Click to sign in: <a href="${link}">${link}</a></p>`
         );
       },
+    }),
+    // Makes this auth server the MCP endpoint's OAuth authorization server.
+    // mcp() IS the OAuth provider (a thin wrapper around
+    // @better-auth/oauth-provider) — there is no separate oauthProvider
+    // plugin alongside it. loginPage/consentPage are absolute frontend URLs:
+    // better-auth uses them verbatim as the redirect Location, with no
+    // origin resolution against this server's own baseURL, so the frontend
+    // does not need to live on this same origin (docs/mcp-spike-findings.md,
+    // Question 1).
+    mcp({
+      loginPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/login`,
+      consentPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/consent`,
+      resource: process.env.MCP_RESOURCE_URL ?? "https://mcp.badgerbase.app/mcp",
+    }),
+    // Client ID Metadata Documents: lets MCP clients register by pointing at
+    // an HTTPS URL that serves their own client metadata, instead of a
+    // separate registration call. fetchClientMetadataResource is this
+    // server's SSRF boundary for that fetch — see oauth-network.ts for why
+    // it isn't @better-auth/cimd's own packaged Node transport.
+    cimd({
+      fetchClientMetadataResource,
+      metadataProfile: "mcp-2026-07-28",
     }),
   ],
 });
