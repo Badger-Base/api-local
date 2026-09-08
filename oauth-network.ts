@@ -61,16 +61,30 @@
  *    connects to), landing the request on an internal host anyway. This is
  *    the exact TOCTOU gap `@better-auth/cimd`'s doc comment calls out as
  *    unfixable "by wrapping the standard Fetch API after DNS resolution."
+ *
+ *    What keeps that gap survivable rather than critical: this transport is
+ *    HTTPS-only and Bun's `fetch` verifies certificates by default, so a
+ *    rebound connection only completes if the internal host it lands on
+ *    serves a certificate valid for the *attacker's* hostname — which no
+ *    internal service does. Rebinding therefore degrades from an SSRF read
+ *    primitive to a blind connect-and-fail probe: the attacker learns
+ *    timing, not content. The residual risk is a coarse internal port-scan
+ *    timing oracle. That is the basis on which this fallback was accepted;
+ *    it is not a claim that the gap is closed.
  * 2. **No connection-level pinning.** There is no way to force Bun's global
  *    `fetch()` to connect to one specific resolved address while still
  *    presenting the original hostname as the TLS SNI/Host — that requires a
  *    custom `lookup` at the socket layer, which is exactly the code path
  *    that crashes under Bun (see above).
  *
- * What IS enforced: HTTPS-only, a 5s hard timeout, no automatic redirect
- * following (`redirect: "manual"` — a 3xx is returned to the caller
- * unfollowed, matching "refuse redirects"), and a capped response body read
- * before anything attempts to parse it as JSON.
+ * What IS enforced: HTTPS-only, no automatic redirect following
+ * (`redirect: "manual"` — a 3xx is returned to the caller unfollowed,
+ * matching "refuse redirects"), a capped response body read before anything
+ * attempts to parse it as JSON, and a single 5s deadline spanning DNS
+ * resolution, connection and body read together. The deadline covers the
+ * lookup deliberately: `dns.lookup` has no timeout of its own, so a
+ * hostname whose authoritative resolver simply stalls would otherwise hold
+ * the authorization request open with no bound at all.
  *
  * If `@better-auth/cimd` ships a Bun-compatible (or runtime-agnostic) build
  * in a later version, switch back to its packaged `fetchClientMetadataResource`
@@ -90,6 +104,30 @@ type ClientMetadataResourceFetch = (
   input: RequestInfo | URL,
   init?: RequestInit
 ) => Awaitable<Response>;
+
+/**
+ * Applies one shared deadline to a step that has no `AbortSignal` of its own
+ * (`dns.lookup`, the capped body read). The wrapped promise is left to settle
+ * on its own; `Promise.race` has already attached handlers to it, so a late
+ * rejection cannot surface as an unhandled rejection.
+ */
+function withDeadline<T>(
+  work: Promise<T>,
+  signal: AbortSignal,
+  step: string
+): Promise<T> {
+  const expiry = new Promise<never>((_, reject) => {
+    const fail = () =>
+      reject(
+        new TypeError(
+          `CIMD ${step} exceeded the ${FETCH_TIMEOUT_MS}ms budget`
+        )
+      );
+    if (signal.aborted) fail();
+    else signal.addEventListener("abort", fail, { once: true });
+  });
+  return Promise.race([work, expiry]);
+}
 
 async function readCapped(response: Response): Promise<Response> {
   if (!response.body) return response;
@@ -145,7 +183,15 @@ export const fetchClientMetadataResource: ClientMetadataResourceFetch = async (
     throw new TypeError("CIMD fallback transport supports only GET and HEAD");
   }
 
-  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  // One budget for the whole operation. Created before the DNS lookup so the
+  // lookup spends the same 5s the connection and body read draw down.
+  const deadline = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+
+  const addresses = await withDeadline(
+    lookup(url.hostname, { all: true, verbatim: true }),
+    deadline,
+    "DNS resolution"
+  );
   if (addresses.length === 0) {
     throw new TypeError("metadata hostname returned no DNS addresses");
   }
@@ -161,8 +207,8 @@ export const fetchClientMetadataResource: ClientMetadataResourceFetch = async (
     method: request.method,
     headers: request.headers,
     redirect: "manual",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: deadline,
   });
 
-  return readCapped(response);
+  return withDeadline(readCapped(response), deadline, "body read");
 };
