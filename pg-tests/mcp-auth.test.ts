@@ -138,3 +138,85 @@ describe("MCP authentication (real token shape)", () => {
     expect(res.status).toBe(401);
   });
 });
+
+/**
+ * The tests above build their own `requireMcpAuth` wrapper, which proves the
+ * library verifies tokens correctly but never executes the configuration
+ * inside `createMcpApp` — the line that actually had the bug. Reintroducing
+ * the old `issuer` override leaves every one of them green.
+ *
+ * This block closes that hole by driving the real thing: `createMcpApp` with
+ * `requireAuth: true`, no overrides, exactly as `server.ts` mounts it. The
+ * JWKS server binds the host and port of better-auth's own `baseURL` and
+ * serves `${basePath}/jwks`, so `requireMcpAuth`'s default `jwksUrl` resolves
+ * to it without being told where to look.
+ *
+ * If someone sets `issuer` back to the bare origin, this test fails and the
+ * others do not.
+ */
+describe("MCP authentication as createMcpApp actually configures it", () => {
+  let jwksServer: ReturnType<typeof Bun.serve>;
+  let kid: string;
+  let privateKey: CryptoKey;
+  let mountedApp: ReturnType<typeof createMcpApp>;
+  let baseURL: string;
+
+  beforeAll(async () => {
+    ({ baseURL } = await auth.$context);
+    const url = new URL(baseURL);
+
+    const { publicKey, privateKey: sk } = await generateKeyPair("EdDSA", { extractable: true });
+    privateKey = sk;
+    kid = "mcp-config-test-key";
+    const publicJwk: JWK = { ...(await exportJWK(publicKey)), kid, alg: "EdDSA", use: "sig" };
+
+    // Serve at the exact path requireMcpAuth derives: `${baseURL}/jwks`.
+    const jwksApp = new Hono();
+    jwksApp.get(`${url.pathname}/jwks`, (c) => c.json({ keys: [publicJwk] }));
+
+    try {
+      jwksServer = Bun.serve({ port: Number(url.port), hostname: url.hostname, fetch: jwksApp.fetch });
+    } catch (cause) {
+      throw new Error(
+        `Could not bind ${url.hostname}:${url.port} to stand in for better-auth's JWKS. ` +
+          `This test must serve JWKS at the real baseURL so requireMcpAuth's own default is ` +
+          `what gets exercised. Free that port (a dev server may be running) and re-run.`,
+        { cause }
+      );
+    }
+
+    mountedApp = createMcpApp({
+      db: testDb.db,
+      cache: { get: async () => null, set: async () => {}, bustAll: async () => {} },
+      requireAuth: true,
+    });
+  });
+
+  afterAll(() => {
+    jwksServer?.stop(true);
+  });
+
+  test("accepts a token minted the way better-auth mints one", async () => {
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "EdDSA", kid })
+      .setSubject("test-user")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .setIssuer(baseURL)
+      .setAudience(mcpResourceUrl)
+      .sign(privateKey);
+
+    const res = await mountedApp.request("http://localhost/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("search_courses");
+  });
+});
