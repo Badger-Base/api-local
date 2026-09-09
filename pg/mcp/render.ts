@@ -69,12 +69,12 @@ function renderSection(s: SectionResponse): string {
         ? `waitlist ${s.waitlist_total}`
         : "full";
   const mode = s.instruction_mode ? ` · ${s.instruction_mode}` : "";
-  const names = s.instructors.map((i) => i.full_name).filter(Boolean);
+  const names = s.instructors.map((i) => i.name).filter(Boolean);
   const who = names.length ? ` · ${names.join(", ")}` : "";
   const rating =
     s.section_avg_rating == null ? "" : ` (RMP ${s.section_avg_rating.toFixed(1)})`;
   const when = s.meetings
-    .map((m) => [m.days, m.start_time && m.end_time ? `${m.start_time}-${m.end_time}` : null]
+    .map((m) => [m.meeting_days, m.start_time && m.end_time ? `${m.start_time}-${m.end_time}` : null]
       .filter(Boolean)
       .join(" "))
     .filter((t) => t.length > 0)
@@ -106,7 +106,8 @@ export function renderCourseDetail(c: CourseResponse): string {
   lines.push(`\nSections (${sections.length}):`);
   for (const s of shown) lines.push(renderSection(s));
   if (sections.length > shown.length) {
-    lines.push(`  …and ${sections.length - shown.length} more sections.`);
+    const more = sections.length - shown.length;
+    lines.push(`  …and ${more} more section${more === 1 ? "" : "s"}.`);
   }
   return lines.join("\n");
 }
