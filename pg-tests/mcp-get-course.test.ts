@@ -25,6 +25,47 @@ const call = async (name: string, args: Record<string, unknown>) => {
   return res.text();
 };
 
+describe("get_course with an ambiguous designation", () => {
+  // No fixture course shares a designation, so the matches.length > 1 branch
+  // never ran end to end — despite covering roughly 20% of the real catalog
+  // (366 designations over 1,148 of 5,655 courses). Seed the collision here.
+  beforeAll(async () => {
+    await testDb.db
+      .insertInto("courses")
+      .values({
+        id: 900,
+        course_uuid: "uuid-dup-900",
+        course_id: "900900",
+        subject_code: "COMP SCI",
+        course_designation: "COMP SCI 400",
+        full_course_designation: "COMP SCI 400",
+        course_title: "Programming III: Special Topics",
+        catalog_number: 400,
+        minimum_credits: 3,
+        maximum_credits: 3,
+        level: "Advanced",
+      } as never)
+      .execute();
+    // No second madgrades row: both courses share the designation, so they
+    // join to the one that already exists. Adding another would fan the join
+    // out and report each variant twice.
+  });
+
+  test("lists the variants instead of guessing one", async () => {
+    const out = await call("get_course", { designation: "COMP SCI 400" });
+    expect(out).toContain("matches 2 courses");
+    expect(out).toContain("Special Topics");
+  });
+
+  test("points at a recovery the tool can actually perform", async () => {
+    // It previously said "Ask about one by its title", but get_course takes
+    // only a designation — following that advice always missed.
+    const out = await call("get_course", { designation: "COMP SCI 400" });
+    expect(out).toContain("search_courses");
+    expect(out).not.toMatch(/ask about one by its title/i);
+  });
+});
+
 describe("get_course", () => {
   test("is advertised in tools/list", async () => {
     const res = await app.request("http://localhost/", {

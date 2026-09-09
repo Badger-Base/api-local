@@ -114,7 +114,7 @@ export function renderCourseDetail(c: CourseResponse): string {
 
 export function renderCourseVariants(courses: CourseResponse[], designation: string): string {
   const lines = [
-    `${designation} matches ${courses.length} courses — they share a designation but differ in content. Ask about one by its title:`,
+    `${designation} matches ${courses.length} courses — they share a designation but differ in content. Use search_courses to narrow by title, then ask again:`,
   ];
   for (const c of courses) {
     const title = c.course_title ?? "(untitled)";
