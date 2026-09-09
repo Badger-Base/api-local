@@ -339,19 +339,34 @@ describe("list subscriptions", () => {
     expect(sub.meetings).toBeInstanceOf(Array);
   });
 
-  it("does not return other users' subscriptions", async () => {
-    await app.request("/course-subscription", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ course_id: "CS200", email: TEST_EMAIL }),
-    });
+  it("refuses to read another user's subscriptions", async () => {
+    // This previously asserted only that the response was empty, which held
+    // because the other address had no rows — not because the request was
+    // refused. A token for one student could read another's list by passing
+    // their email; the endpoint answered 200 with that student's data.
+    const res = await app.request(
+      `/subscriptions?email=${encodeURIComponent("other@wisc.edu")}`,
+      { headers: headers() },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("refuses even when the other user actually has subscriptions", async () => {
+    // The case the old test could not catch: seed real rows for the other
+    // student, then confirm they are never returned.
+    await testDb.db
+      .insertInto("course_subscriptions")
+      .values({ email: "other@wisc.edu", course_id: 1 })
+      .execute();
 
     const res = await app.request(
       `/subscriptions?email=${encodeURIComponent("other@wisc.edu")}`,
       { headers: headers() },
     );
-    const body = await res.json();
-    expect(body.course_subscriptions).toEqual([]);
+    expect(res.status).toBe(401);
+
+    const body = await res.json().catch(() => ({}));
+    expect(JSON.stringify(body)).not.toContain("other@wisc.edu");
   });
 });
 
