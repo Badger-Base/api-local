@@ -8,8 +8,17 @@ import type { JWTPayload } from "jose";
 import type { Database } from "../types.ts";
 import type { QueryCache } from "../cache.ts";
 import { runCourseQuery, findCoursesByDesignation } from "../query.ts";
+import { resolveUserEmail, findSubscriptions } from "../subscriptions-query.ts";
 import { renderCourseResults, renderCourseDetail, renderCourseVariants } from "./render.ts";
+import { renderSubscriptions } from "./subscriptions-render.ts";
 import { auth, mcpResourceUrl } from "../../auth.ts";
+
+/** True when the access token's `scope` claim contains `wanted`. */
+function hasScope(claims: JWTPayload | null, wanted: string): boolean {
+  const raw = claims?.scope;
+  if (typeof raw !== "string") return false;
+  return raw.split(/\s+/).includes(wanted);
+}
 
 interface McpAppDeps {
   db: Kysely<Database>;
@@ -255,6 +264,60 @@ function registerTools(
         return { content: [{ type: "text" as const, text }] };
       } catch (error) {
         console.error("Error in MCP get_course:", error);
+        return {
+          content: [{ type: "text" as const, text: "Internal server error" }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.registerTool(
+    "my_subscriptions",
+    {
+      description:
+        "The courses and sections the signed-in student is watching for open seats. Takes no arguments — it always reports the caller's own subscriptions.",
+      inputSchema: {},
+    },
+    async () => {
+      // requireMcpAuth gates the endpoint, not individual tools, so the
+      // per-tool scope boundary is enforced here.
+      if (!hasScope(claims, "subscriptions:read")) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "This connection was not granted the subscriptions:read permission, so it cannot see your subscriptions. Reconnect and approve it to enable this.",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const userId = typeof claims?.sub === "string" ? claims.sub : null;
+      if (!userId) {
+        return {
+          content: [{ type: "text" as const, text: "Could not identify the signed-in account." }],
+          isError: true,
+        };
+      }
+
+      try {
+        const email = await resolveUserEmail(db, userId);
+        if (!email) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No BadgerBase account matches this sign-in, so there are no subscriptions to show.",
+              },
+            ],
+          };
+        }
+        const subs = await findSubscriptions(db, email);
+        return { content: [{ type: "text" as const, text: renderSubscriptions(subs) }] };
+      } catch (error) {
+        console.error("Error in MCP my_subscriptions:", error);
         return {
           content: [{ type: "text" as const, text: "Internal server error" }],
           isError: true,
