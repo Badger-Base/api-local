@@ -222,6 +222,14 @@ export function createPgSubscriptionApp({
     if (!email)
       return c.json({ error: "email query parameter is required" }, 400);
 
+    // The sibling POST and DELETE handlers already refuse a mismatch; this
+    // one did not, so any caller reaching this endpoint could read another
+    // student's watched courses by passing their address. @wisc.edu
+    // addresses are guessable, which is what made that worth closing.
+    if (auth.jwtPayload.email && email !== auth.jwtPayload.email) {
+      return c.json({ error: "Email mismatch" }, 401);
+    }
+
     try {
       const courseSubscriptions = await db
         .selectFrom("course_subscriptions")
