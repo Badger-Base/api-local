@@ -198,4 +198,14 @@ export const fixture: TestFixture = {
     { id: 4, course_name: "COMP SCI 577", course_uuid: "mg-cs577", median_grade: "B", a_percentage: 0.25, ab_percentage: 0.20, b_percentage: 0.25, bc_percentage: 0.15, c_percentage: 0.10, d_percentage: 0.03, f_percentage: 0.02, cumulative_gpa: 3.10, most_recent_gpa: 3.00 },
     { id: 5, course_name: "COMP SCI 302", course_uuid: "mg-cs302", median_grade: "AB", a_percentage: 0.30, ab_percentage: 0.30, b_percentage: 0.20, bc_percentage: 0.10, c_percentage: 0.05, d_percentage: 0.03, f_percentage: 0.02, cumulative_gpa: 3.30, most_recent_gpa: 3.35 },
   ],
+
+  // Two students exist for one reason: so the subscription-isolation test
+  // can fail if isolation breaks. Alpha watches a course, Beta watches a
+  // section — neither should ever see the other's rows.
+  users: [
+    { id: "user-alpha", email: "alpha@wisc.edu", name: "Alpha Student" },
+    { id: "user-beta", email: "beta@wisc.edu", name: "Beta Student" },
+  ],
+  course_subscriptions: [{ email: "alpha@wisc.edu", course_id: 1 }],
+  section_subscriptions: [{ email: "beta@wisc.edu", section_id: 3 }],
 };
