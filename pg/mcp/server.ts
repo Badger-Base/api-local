@@ -4,6 +4,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { requireMcpAuth } from "@better-auth/mcp";
+import type { JWTPayload } from "jose";
 import type { Database } from "../types.ts";
 import type { QueryCache } from "../cache.ts";
 import { runCourseQuery } from "../query.ts";
@@ -193,7 +194,12 @@ export function normalizeToolArgs(args: SearchCoursesArgs): Record<string, strin
   return out;
 }
 
-function registerTools(server: McpServer, db: Kysely<Database>, cache: QueryCache): void {
+function registerTools(
+  server: McpServer,
+  db: Kysely<Database>,
+  cache: QueryCache,
+  claims: JWTPayload | null
+): void {
   server.registerTool(
     "search_courses",
     {
@@ -227,9 +233,14 @@ function registerTools(server: McpServer, db: Kysely<Database>, cache: QueryCach
  * are cheap to construct and this avoids any state (initialization,
  * in-flight streams) leaking or colliding across unrelated requests.
  */
-async function handleMcpRequest(req: Request, db: Kysely<Database>, cache: QueryCache): Promise<Response> {
+async function handleMcpRequest(
+  req: Request,
+  db: Kysely<Database>,
+  cache: QueryCache,
+  claims: JWTPayload | null
+): Promise<Response> {
   const server = new McpServer({ name: "badgerbase-mcp", version: "1.0.0" });
-  registerTools(server, db, cache);
+  registerTools(server, db, cache, claims);
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
@@ -273,13 +284,13 @@ async function handleMcpRequest(req: Request, db: Kysely<Database>, cache: Query
 export function createMcpApp({ db, cache, requireAuth = true }: McpAppDeps): Hono {
   const app = new Hono();
 
-  const rawHandler = (req: Request) => handleMcpRequest(req, db, cache);
-
   const wrappedHandler = requireAuth
-    ? requireMcpAuth(auth, rawHandler, {
-        resource: mcpResourceUrl,
-      })
-    : rawHandler;
+    ? requireMcpAuth(
+        auth,
+        (req: Request, accessTokenClaims: JWTPayload) => handleMcpRequest(req, db, cache, accessTokenClaims),
+        { resource: mcpResourceUrl }
+      )
+    : (req: Request) => handleMcpRequest(req, db, cache, null);
 
   app.all("/", (c) => wrappedHandler(c.req.raw));
 
