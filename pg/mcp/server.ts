@@ -7,8 +7,8 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import type { JWTPayload } from "jose";
 import type { Database } from "../types.ts";
 import type { QueryCache } from "../cache.ts";
-import { runCourseQuery } from "../query.ts";
-import { renderCourseResults } from "./render.ts";
+import { runCourseQuery, findCoursesByDesignation } from "../query.ts";
+import { renderCourseResults, renderCourseDetail, renderCourseVariants } from "./render.ts";
 import { auth, mcpResourceUrl } from "../../auth.ts";
 
 interface McpAppDeps {
@@ -216,6 +216,45 @@ function registerTools(
         // real error server-side, never let a raw error message reach an
         // unauthenticated caller.
         console.error("Error in MCP search_courses:", error);
+        return {
+          content: [{ type: "text" as const, text: "Internal server error" }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.registerTool(
+    "get_course",
+    {
+      description:
+        "Full detail for one course: description, prerequisites, every section with seats, instructors and meeting times. Use search_courses first to find the designation.",
+      inputSchema: {
+        designation: z
+          .string()
+          .describe('Course designation, e.g. "COMP SCI 400". Case-insensitive.'),
+      },
+    },
+    async ({ designation }) => {
+      try {
+        const matches = await findCoursesByDesignation(db, cache, designation);
+        if (matches.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No course matched ${designation}. Try search_courses to find the right designation.`,
+              },
+            ],
+          };
+        }
+        const text =
+          matches.length === 1
+            ? renderCourseDetail(matches[0])
+            : renderCourseVariants(matches, designation);
+        return { content: [{ type: "text" as const, text }] };
+      } catch (error) {
+        console.error("Error in MCP get_course:", error);
         return {
           content: [{ type: "text" as const, text: "Internal server error" }],
           isError: true,
