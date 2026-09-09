@@ -191,15 +191,27 @@ describe("gen_ed filter with cross-listings", () => {
     expect(uniqueUuids.size).toBe(uuids.length);
   });
 
-  it("drops courses without madgrades match (INNER JOIN)", async () => {
+  // Was: "drops courses without madgrades match (INNER JOIN)". The qualifying
+  // query now LEFT joins madgrades, because an inner join hid every course
+  // that has never been graded — 224 of 5,655 in production, mostly new
+  // courses and first-year seminars. A course with no grade history is still
+  // a course a student can enroll in, so it belongs in results.
+  it("includes courses with no madgrades row", async () => {
     const body = await query({ gen_ed: "QR-B" });
     const designations = body.data.map((c: any) => c.course_designation);
-    expect(designations).not.toContain("ENGL 418");
+    expect(designations).toContain("ENGL 418");
   });
 
-  it("total_count reflects only courses with madgrades matches", async () => {
+  it("reports a course with no grade history as a null GPA, not as absent", async () => {
     const body = await query({ gen_ed: "QR-B" });
-    expect(body.total_count).toBe(3);
+    const engl = body.data.find((c: any) => c.course_designation === "ENGL 418");
+    expect(engl).toBeDefined();
+    expect(engl.cumulative_gpa).toBeNull();
+  });
+
+  it("total_count counts every matching course, graded or not", async () => {
+    const body = await query({ gen_ed: "QR-B" });
+    expect(body.total_count).toBe(4);
   });
 
   it("non-gen_ed courses are excluded by gen_ed filter", async () => {

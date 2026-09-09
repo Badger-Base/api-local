@@ -36,9 +36,15 @@ export async function runCourseQuery(
   const page = parseInt(params.page || "1");
 
   // Step 1: Qualifying query — find all matching course IDs
+  // LEFT, not INNER: madgrades only has rows for courses that have been
+  // graded before, so an inner join silently hides every course with no
+  // grade history — 224 of 5,655 in production (4%), which is mostly new
+  // courses and first-year seminars. `hydrate.ts` already left-joins this
+  // same table, so the rest of the pipeline was always written to expect a
+  // course with no grades; only this qualifying query disagreed.
   let qualifyQuery = db
     .selectFrom("courses")
-    .innerJoin(
+    .leftJoin(
       "madgrades_course_grades",
       "madgrades_course_grades.course_name",
       "courses.course_designation"
