@@ -105,7 +105,7 @@ describe("MCP authentication (real token shape)", () => {
   });
 
   async function sign(iss: string): Promise<string> {
-    return new SignJWT({})
+    return new SignJWT({ scope: "courses:read" })
       .setProtectedHeader({ alg: "EdDSA", kid })
       .setSubject("test-user")
       .setIssuedAt()
@@ -197,7 +197,7 @@ describe("MCP authentication as createMcpApp actually configures it", () => {
   });
 
   test("accepts a token minted the way better-auth mints one", async () => {
-    const token = await new SignJWT({})
+    const token = await new SignJWT({ scope: "courses:read" })
       .setProtectedHeader({ alg: "EdDSA", kid })
       .setSubject("test-user")
       .setIssuedAt()

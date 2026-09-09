@@ -327,7 +327,7 @@ export function createMcpApp({ db, cache, requireAuth = true }: McpAppDeps): Hon
     ? requireMcpAuth(
         auth,
         (req: Request, accessTokenClaims: JWTPayload) => handleMcpRequest(req, db, cache, accessTokenClaims),
-        { resource: mcpResourceUrl }
+        { resource: mcpResourceUrl, requiredScopes: ["courses:read"] }
       )
     : (req: Request) => handleMcpRequest(req, db, cache, null);
 

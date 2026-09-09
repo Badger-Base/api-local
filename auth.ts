@@ -286,6 +286,11 @@ export const auth = betterAuth({
       loginPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/login`,
       consentPage: `${process.env.APP_URL ?? "https://badgerbase.app"}/consent`,
       resource: mcpResourceUrl,
+      // The scope vocabulary this server issues. Without it, valid scopes
+      // derive from whatever a CIMD client self-declares, which is not a
+      // vocabulary we control — and scope stops being a boundary at the
+      // moment a tool starts reading a student's own data.
+      scopes: ["courses:read", "subscriptions:read"],
     }),
     // Client ID Metadata Documents: lets MCP clients register by pointing at
     // an HTTPS URL that serves their own client metadata, instead of a
