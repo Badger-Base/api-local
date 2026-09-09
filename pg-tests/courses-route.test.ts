@@ -44,8 +44,8 @@ describe("courses route", () => {
 
   it("returns all courses with no filters", async () => {
     const body = await query();
-    expect(body.data.length).toBe(5);
-    expect(body.total_count).toBe(5);
+    expect(body.data.length).toBe(7);
+    expect(body.total_count).toBe(7);
     expect(body.has_more).toBe(false);
   });
 
@@ -74,7 +74,7 @@ describe("courses route", () => {
 
     expect(page1.data.length).toBe(2);
     expect(page1.has_more).toBe(true);
-    expect(page1.total_count).toBe(5);
+    expect(page1.total_count).toBe(7);
 
     expect(page2.data.length).toBe(2);
     const page1Uuids = page1.data.map((c: any) => c.course_uuid);
@@ -108,11 +108,20 @@ describe("courses route", () => {
   });
 
   // Finding #1: sort order preserved through hydration
-  it("sort=cumulative_gpa returns results in GPA descending order", async () => {
+  it("sort=cumulative_gpa returns results in GPA descending order, ungraded last", async () => {
     const body = await query({ sort: "cumulative_gpa" });
     const gpas = body.data.map((c: any) => c.cumulative_gpa);
-    for (let i = 1; i < gpas.length; i++) {
-      expect(gpas[i - 1]).toBeGreaterThanOrEqual(gpas[i]);
+
+    // Postgres sorts NULLs FIRST on DESC, so without an explicit NULLS LAST
+    // the courses with no grade history would lead a "highest GPA" list.
+    const firstNull = gpas.findIndex((g: number | null) => g === null);
+    if (firstNull !== -1) {
+      expect(gpas.slice(firstNull).every((g: number | null) => g === null)).toBe(true);
+    }
+
+    const graded = gpas.filter((g: number | null) => g !== null) as number[];
+    for (let i = 1; i < graded.length; i++) {
+      expect(graded[i - 1]).toBeGreaterThanOrEqual(graded[i]);
     }
   });
 
