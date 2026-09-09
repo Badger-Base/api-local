@@ -30,12 +30,26 @@ describe("findCoursesByDesignation", () => {
     expect(found[0].course_designation).toBe("COMP SCI 400");
   });
 
+  test("collapses doubled internal spaces", async () => {
+    // The trim/case path and the \s+ collapse are separate branches; the
+    // case above only exercises the first.
+    const found = await findCoursesByDesignation(testDb.db, mockCache, "COMP  SCI   400");
+    expect(found.length).toBeGreaterThan(0);
+    expect(found[0].course_designation).toBe("COMP SCI 400");
+  });
+
   test("returns an empty array for an unknown designation", async () => {
     expect(await findCoursesByDesignation(testDb.db, mockCache, "BASKET 999")).toEqual([]);
   });
 
   test("returns hydrated sections, which detail rendering depends on", async () => {
     const found = await findCoursesByDesignation(testDb.db, mockCache, "COMP SCI 400");
-    expect(Array.isArray(found[0].sections)).toBe(true);
+    // Array.isArray alone would still pass if hydration regressed to always
+    // returning [], which is exactly the failure get_course would suffer.
+    expect(found[0].sections.length).toBeGreaterThan(0);
+    const withInstructors = found[0].sections.some((s) => s.instructors.length > 0);
+    const withMeetings = found[0].sections.some((s) => s.meetings.length > 0);
+    expect(withInstructors).toBe(true);
+    expect(withMeetings).toBe(true);
   });
 });
