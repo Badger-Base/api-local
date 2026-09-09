@@ -1,5 +1,5 @@
 import type { Kysely } from "kysely";
-import type { Database, ApiQueryResponse } from "./types.ts";
+import type { Database, ApiQueryResponse, CourseResponse } from "./types.ts";
 import type { QueryCache } from "./cache.ts";
 import { applyCourseFilters } from "./builders/course-filter.ts";
 import { applySectionExists } from "./builders/section-exists.ts";
@@ -121,4 +121,41 @@ export async function runCourseQuery(
   await cache.set(params, response);
 
   return response;
+}
+
+/**
+ * Every course sharing a designation. `course_designation` is NOT unique —
+ * 366 designations cover 1,148 of 5,655 courses, mostly topics courses and
+ * seminars that share a code but differ in content — so this returns all
+ * matches and lets the caller decide how to present them.
+ *
+ * Runs through `runCourseQuery` so hydration, section shaping and caching
+ * are identical to the REST route rather than a second, drifting path.
+ *
+ * limit: "100", not runCourseQuery's usual default. search_param is an
+ * ILIKE spanning course_designation, course_title, full_course_designation
+ * AND instructor names (see the search_param block above), so a popular
+ * designation can rack up matches beyond just the designation itself
+ * (title/instructor hits) before this function's exact-match filter below
+ * narrows them back down. The worst case measured against the live catalog
+ * is PSYCH 621 at 39 rows — 100 leaves comfortable margin.
+ */
+export async function findCoursesByDesignation(
+  db: Kysely<Database>,
+  cache: QueryCache,
+  designation: string
+): Promise<CourseResponse[]> {
+  const normalized = designation.trim().replace(/\s+/g, " ").toUpperCase();
+  if (normalized.length === 0) return [];
+
+  const res = await runCourseQuery(db, cache, {
+    search_param: normalized,
+    limit: "100",
+  });
+
+  return res.data.filter(
+    (c) =>
+      c.course_designation?.toUpperCase() === normalized ||
+      c.full_course_designation?.toUpperCase() === normalized
+  );
 }

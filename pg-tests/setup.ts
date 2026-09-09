@@ -27,6 +27,9 @@ export interface TestFixture {
   section_meetings: Array<Record<string, unknown>>;
   rmp_cleaned: Array<Record<string, unknown>>;
   madgrades_course_grades: Array<Record<string, unknown>>;
+  users?: Array<{ id: string; email: string; name: string }>;
+  course_subscriptions?: Array<{ email: string; course_id: number }>;
+  section_subscriptions?: Array<{ email: string; section_id: number }>;
 }
 
 /**
@@ -89,6 +92,7 @@ export async function setupTestDb(): Promise<TestDb> {
       "courses",
       "subjects",
       "rmp_cleaned",
+      "user",
     ] as const) {
       await sql`TRUNCATE TABLE ${sql.table(table)} CASCADE`.execute(db);
     }
@@ -129,6 +133,31 @@ export async function setupTestDb(): Promise<TestDb> {
       await db
         .insertInto("madgrades_course_grades")
         .values(fixture.madgrades_course_grades as any)
+        .execute();
+    }
+    if (fixture.users?.length) {
+      await db
+        .insertInto("user" as any)
+        .values(
+          fixture.users.map((u) => ({
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            emailVerified: true,
+          })) as any
+        )
+        .execute();
+    }
+    if (fixture.course_subscriptions?.length) {
+      await db
+        .insertInto("course_subscriptions")
+        .values(fixture.course_subscriptions)
+        .execute();
+    }
+    if (fixture.section_subscriptions?.length) {
+      await db
+        .insertInto("section_subscriptions")
+        .values(fixture.section_subscriptions)
         .execute();
     }
   }

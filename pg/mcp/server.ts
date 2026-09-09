@@ -4,11 +4,21 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { requireMcpAuth } from "@better-auth/mcp";
+import type { JWTPayload } from "jose";
 import type { Database } from "../types.ts";
 import type { QueryCache } from "../cache.ts";
-import { runCourseQuery } from "../query.ts";
-import { renderCourseResults } from "./render.ts";
+import { runCourseQuery, findCoursesByDesignation } from "../query.ts";
+import { resolveUserEmail, findSubscriptions } from "../subscriptions-query.ts";
+import { renderCourseResults, renderCourseDetail, renderCourseVariants } from "./render.ts";
+import { renderSubscriptions } from "./subscriptions-render.ts";
 import { auth, mcpResourceUrl } from "../../auth.ts";
+
+/** True when the access token's `scope` claim contains `wanted`. */
+function hasScope(claims: JWTPayload | null, wanted: string): boolean {
+  const raw = claims?.scope;
+  if (typeof raw !== "string") return false;
+  return raw.split(/\s+/).includes(wanted);
+}
 
 interface McpAppDeps {
   db: Kysely<Database>;
@@ -193,7 +203,12 @@ export function normalizeToolArgs(args: SearchCoursesArgs): Record<string, strin
   return out;
 }
 
-function registerTools(server: McpServer, db: Kysely<Database>, cache: QueryCache): void {
+function registerTools(
+  server: McpServer,
+  db: Kysely<Database>,
+  cache: QueryCache,
+  claims: JWTPayload | null
+): void {
   server.registerTool(
     "search_courses",
     {
@@ -217,6 +232,99 @@ function registerTools(server: McpServer, db: Kysely<Database>, cache: QueryCach
       }
     }
   );
+
+  server.registerTool(
+    "get_course",
+    {
+      description:
+        "Full detail for one course: description, prerequisites, every section with seats, instructors and meeting times. Use search_courses first to find the designation.",
+      inputSchema: {
+        designation: z
+          .string()
+          .describe('Course designation, e.g. "COMP SCI 400". Case-insensitive.'),
+      },
+    },
+    async ({ designation }) => {
+      try {
+        const matches = await findCoursesByDesignation(db, cache, designation);
+        if (matches.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No course matched ${designation}. Try search_courses to find the right designation.`,
+              },
+            ],
+          };
+        }
+        const text =
+          matches.length === 1
+            ? renderCourseDetail(matches[0])
+            : renderCourseVariants(matches, designation);
+        return { content: [{ type: "text" as const, text }] };
+      } catch (error) {
+        console.error("Error in MCP get_course:", error);
+        return {
+          content: [{ type: "text" as const, text: "Internal server error" }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.registerTool(
+    "my_subscriptions",
+    {
+      description:
+        "The courses and sections the signed-in student is watching for open seats. Takes no arguments — it always reports the caller's own subscriptions.",
+      inputSchema: {},
+    },
+    async () => {
+      // requireMcpAuth gates the endpoint, not individual tools, so the
+      // per-tool scope boundary is enforced here.
+      if (!hasScope(claims, "subscriptions:read")) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "This connection was not granted the subscriptions:read permission, so it cannot see your subscriptions. Reconnect and approve it to enable this.",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const userId = typeof claims?.sub === "string" ? claims.sub : null;
+      if (!userId) {
+        return {
+          content: [{ type: "text" as const, text: "Could not identify the signed-in account." }],
+          isError: true,
+        };
+      }
+
+      try {
+        const email = await resolveUserEmail(db, userId);
+        if (!email) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No BadgerBase account matches this sign-in, so there are no subscriptions to show.",
+              },
+            ],
+          };
+        }
+        const subs = await findSubscriptions(db, email);
+        return { content: [{ type: "text" as const, text: renderSubscriptions(subs) }] };
+      } catch (error) {
+        console.error("Error in MCP my_subscriptions:", error);
+        return {
+          content: [{ type: "text" as const, text: "Internal server error" }],
+          isError: true,
+        };
+      }
+    }
+  );
 }
 
 /**
@@ -227,9 +335,14 @@ function registerTools(server: McpServer, db: Kysely<Database>, cache: QueryCach
  * are cheap to construct and this avoids any state (initialization,
  * in-flight streams) leaking or colliding across unrelated requests.
  */
-async function handleMcpRequest(req: Request, db: Kysely<Database>, cache: QueryCache): Promise<Response> {
+async function handleMcpRequest(
+  req: Request,
+  db: Kysely<Database>,
+  cache: QueryCache,
+  claims: JWTPayload | null
+): Promise<Response> {
   const server = new McpServer({ name: "badgerbase-mcp", version: "1.0.0" });
-  registerTools(server, db, cache);
+  registerTools(server, db, cache, claims);
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
@@ -273,13 +386,13 @@ async function handleMcpRequest(req: Request, db: Kysely<Database>, cache: Query
 export function createMcpApp({ db, cache, requireAuth = true }: McpAppDeps): Hono {
   const app = new Hono();
 
-  const rawHandler = (req: Request) => handleMcpRequest(req, db, cache);
-
   const wrappedHandler = requireAuth
-    ? requireMcpAuth(auth, rawHandler, {
-        resource: mcpResourceUrl,
-      })
-    : rawHandler;
+    ? requireMcpAuth(
+        auth,
+        (req: Request, accessTokenClaims: JWTPayload) => handleMcpRequest(req, db, cache, accessTokenClaims),
+        { resource: mcpResourceUrl, requiredScopes: ["courses:read"] }
+      )
+    : (req: Request) => handleMcpRequest(req, db, cache, null);
 
   app.all("/", (c) => wrappedHandler(c.req.raw));
 
