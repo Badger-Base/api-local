@@ -65,6 +65,33 @@ export function applySectionExists(
   ) as AnyCoursesQuery;
 }
 
+/**
+ * The availability calendar lets a student mark several free blocks on one
+ * day, and the frontend sends them comma-joined —
+ * `mondayStartTime="34200000,39600000"` with a matching `mondayEndTime`.
+ * Starts and ends pair up by position; an unpaired or unparseable entry is
+ * dropped rather than half-applied.
+ */
+function parseDayBlocks(
+  p: SectionFilterParams,
+  day: string
+): Array<{ start: number; end: number }> {
+  const rawStarts = p[`${day}StartTime` as keyof SectionFilterParams];
+  const rawEnds = p[`${day}EndTime` as keyof SectionFilterParams];
+  if (!rawStarts || !rawEnds) return [];
+
+  const starts = String(rawStarts).split(",");
+  const ends = String(rawEnds).split(",");
+
+  const blocks: Array<{ start: number; end: number }> = [];
+  for (let i = 0; i < Math.min(starts.length, ends.length); i++) {
+    const start = parseInt(starts[i].trim(), 10);
+    const end = parseInt(ends[i].trim(), 10);
+    if (Number.isFinite(start) && Number.isFinite(end)) blocks.push({ start, end });
+  }
+  return blocks;
+}
+
 function buildSectionSubquery(
   selectFrom: ExpressionBuilder<Database, "courses">["selectFrom"],
   p: SectionFilterParams
@@ -195,33 +222,27 @@ function buildSectionSubquery(
         }
 
         for (const day of dayFilters) {
-          const start = parseInt(
-            p[`${day}StartTime` as keyof SectionFilterParams]!
-          );
-          const end = parseInt(
-            p[`${day}EndTime` as keyof SectionFilterParams]!
-          );
+          const blocks = parseDayBlocks(p, day);
+          if (blocks.length === 0) continue;
+
           const startCol = `section_meetings.${day}_meeting_start` as any;
           const endCol = `section_meetings.${day}_meeting_end` as any;
 
-          if (end > start) {
-            violations.push(
-              eb.and([
-                eb(startCol, "is not", null),
-                eb.or([eb(startCol, ">=", end), eb(endCol, "<=", start)]),
-              ])
-            );
-          } else {
-            // UTC wrapping: window is [start, MAX) ∪ [0, end).
-            // Outside both sub-intervals: end_col <= start AND start_col >= end
-            violations.push(
-              eb.and([
-                eb(startCol, "is not", null),
-                eb(endCol, "<=", start),
-                eb(startCol, ">=", end),
-              ])
-            );
-          }
+          // A meeting on this day violates only if it fits NONE of the
+          // student's free blocks, so the per-block "outside" predicates are
+          // ANDed. Reading only the first block (the old parseInt) silently
+          // dropped every later one and over-filtered the results.
+          const outsideEveryBlock = blocks.map(({ start, end }) =>
+            end > start
+              ? eb.or([eb(startCol, ">=", end), eb(endCol, "<=", start)])
+              : // UTC wrapping: window is [start, MAX) ∪ [0, end).
+                // Outside both sub-intervals: end_col <= start AND start_col >= end
+                eb.and([eb(endCol, "<=", start), eb(startCol, ">=", end)])
+          );
+
+          violations.push(
+            eb.and([eb(startCol, "is not", null), ...outsideEveryBlock])
+          );
         }
 
         return eb.or(violations);
