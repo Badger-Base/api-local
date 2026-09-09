@@ -189,3 +189,66 @@ describe("section EXISTS builder", () => {
     expect(result).not.toContain("uuid-cs200");
   });
 });
+
+describe("availability windows with more than one block per day", () => {
+  // The calendar lets a student draw several free blocks on one day, and the
+  // frontend sends them comma-joined:
+  //   params["mondayStartTime"] = "34200000,39600000"
+  // The builder read them with parseInt(), which stops at the comma and keeps
+  // only the first block. Every later block was silently dropped, so results
+  // were filtered to the first window alone — failing toward FEWER courses,
+  // which is why it would not generate bug reports.
+  //
+  // Times here follow the fixture's convention: milliseconds from local
+  // midnight. Two blocks on each of Mon/Wed/Fri:
+  //   block A 09:30–10:50  (34200000–39000000)
+  //   block B 11:00–12:00  (39600000–43200000)
+  //
+  // CS200's section 1 meets MWF 09:55–10:45, inside block A.
+  // CS400's section 3 meets MWF 11:00–11:50, inside block B only.
+  // All three days are listed because a section meeting on an unlisted day is
+  // excluded outright.
+  const twoBlocksMWF = {
+    mondayStartTime: "34200000,39600000",
+    mondayEndTime: "39000000,43200000",
+    wednesdayStartTime: "34200000,39600000",
+    wednesdayEndTime: "39000000,43200000",
+    fridayStartTime: "34200000,39600000",
+    fridayEndTime: "39000000,43200000",
+  };
+
+  it("honours every block, not just the first", async () => {
+    const result = await queryWithSectionFilters(twoBlocksMWF);
+    expect(result).toContain("uuid-cs200"); // fits block A
+    expect(result).toContain("uuid-cs400"); // fits block B — dropped by the bug
+  });
+
+  it("still excludes a section that fits none of the blocks", async () => {
+    // Same two blocks, but nothing is free between 10:50 and 11:00, so a
+    // section meeting then must not slip through as a side effect of the fix.
+    const result = await queryWithSectionFilters({
+      mondayStartTime: "34200000,39600000",
+      mondayEndTime: "35400000,43200000", // block A now ends 09:50
+      wednesdayStartTime: "34200000,39600000",
+      wednesdayEndTime: "35400000,43200000",
+      fridayStartTime: "34200000,39600000",
+      fridayEndTime: "35400000,43200000",
+    });
+    // CS200 meets 09:55–10:45: after the shortened block A, before block B.
+    expect(result).not.toContain("uuid-cs200");
+    expect(result).toContain("uuid-cs400");
+  });
+
+  it("a single block still behaves exactly as before", async () => {
+    const result = await queryWithSectionFilters({
+      mondayStartTime: "34200000",
+      mondayEndTime: "39000000",
+      wednesdayStartTime: "34200000",
+      wednesdayEndTime: "39000000",
+      fridayStartTime: "34200000",
+      fridayEndTime: "39000000",
+    });
+    expect(result).toContain("uuid-cs200");
+    expect(result).not.toContain("uuid-cs400");
+  });
+});
