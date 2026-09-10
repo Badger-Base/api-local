@@ -43,6 +43,29 @@ const MIN_LIMIT = 1;
 const DEFAULT_LIMIT = 10;
 
 /**
+ * Shared description text for the five `free_{day}` fields. These are
+ * schedule-fitting filters, not "find me a morning class" filters — the
+ * semantics are easy to misuse, so this is stated plainly and repeated per
+ * field rather than left to a general note the model might not connect to
+ * the specific parameter it's about to call.
+ */
+function freeDayDescription(day: string): string {
+  return (
+    `Blocks of time you are FREE on ${day}s, in local Madison time — comma-separated ` +
+    `"HH:MM-HH:MM" ranges, e.g. "13:00-17:00,18:00-20:00" for free 1-5pm and 6-8pm. ` +
+    `A course matches only if one of its sections has EVERY meeting falling inside ` +
+    `your free blocks on every day you specify with a free_* field. IMPORTANT: a ` +
+    `section that meets on a day you did NOT specify is excluded entirely, even if ` +
+    `you said nothing about that day. So do not set only one free_* field to mean ` +
+    `"find me a morning class" in general — that also rejects every section meeting ` +
+    `on the other four weekdays. Use these fields only when fitting a schedule ` +
+    `around fixed commitments, and set every day that matters (e.g. both ` +
+    `free_monday and free_wednesday together to check a Monday/Wednesday-only free ` +
+    `window).`
+  );
+}
+
+/**
  * The model-facing input schema for `search_courses`.
  *
  * IMPORTANT — every value here reaches `runCourseQuery` as a string.
@@ -101,6 +124,45 @@ const searchCoursesShape = {
     .boolean()
     .optional()
     .describe("Only courses satisfying the Natural Science breadth requirement."),
+  min_professor_rating: z
+    .number()
+    .optional()
+    .describe(
+      "Minimum average RateMyProfessors rating (1-5 scale) among a section's instructors. A course matches if at least one of its sections clears this."
+    ),
+  max_professor_difficulty: z
+    .number()
+    .optional()
+    .describe(
+      "Maximum average RateMyProfessors difficulty (1-5 scale) among a section's instructors — a CEILING: keeps sections rated at most this difficult. There is no way with this field to require a harder course."
+    ),
+  min_professor_ratings_count: z
+    .number()
+    .optional()
+    .describe(
+      "Only sections whose instructors have at least this many combined RateMyProfessors ratings. Use this to avoid judging a professor on a single review."
+    ),
+  min_would_take_again_percent: z
+    .number()
+    .optional()
+    .describe(
+      "Minimum percent (0-100) of RateMyProfessors reviewers who said they would take the instructor again."
+    ),
+  min_open_seats: z
+    .number()
+    .optional()
+    .describe("Only sections with at least this many seats currently open."),
+  sort: z
+    .string()
+    .optional()
+    .describe(
+      'How to order results. "cumulative_gpa" sorts by highest all-time average course GPA first; "recent_gpa" sorts by the most recent semester\'s average GPA first. These are the only two supported values — anything else is ignored and results fall back to catalog-number order.'
+    ),
+  free_monday: z.string().optional().describe(freeDayDescription("Monday")),
+  free_tuesday: z.string().optional().describe(freeDayDescription("Tuesday")),
+  free_wednesday: z.string().optional().describe(freeDayDescription("Wednesday")),
+  free_thursday: z.string().optional().describe(freeDayDescription("Thursday")),
+  free_friday: z.string().optional().describe(freeDayDescription("Friday")),
   limit: z
     .number()
     .optional()
@@ -128,10 +190,38 @@ const searchCoursesShape = {
  *   `null` — it is not a boolean flag, so this field is typed as a string
  *   rather than the boolean a literal reading of the tool spec would
  *   suggest.
+ * - `min_professor_rating` -> `min_section_avg_rating`,
+ *   `max_professor_difficulty` -> `max_section_avg_difficulty`,
+ *   `min_professor_ratings_count` -> `min_section_total_ratings`,
+ *   `min_would_take_again_percent` -> `min_section_avg_would_take_again`,
+ *   `min_open_seats` -> `min_available_seats`: all five read from
+ *   `pg/builders/section-exists.ts`, which names its RMP/seat params after
+ *   the underlying columns rather than the model-facing concept. Note
+ *   `max_section_avg_difficulty` is deliberately the only ceiling ("<=") in
+ *   that group — the other three RMP predicates there are floors (">=").
+ *
+ * `free_monday` .. `free_friday` are NOT simple renames and are therefore
+ * handled outside this map, in `convertFreeBlocks` below: one field expands
+ * into two builder params (`{day}StartTime` / `{day}EndTime`) via a
+ * timezone conversion, not a 1:1 key swap.
  */
 const KEY_MAP: Record<string, string> = {
   min_gpa: "min_cumulative_gpa",
   general_education: "gen_ed",
+  min_professor_rating: "min_section_avg_rating",
+  max_professor_difficulty: "max_section_avg_difficulty",
+  min_professor_ratings_count: "min_section_total_ratings",
+  min_would_take_again_percent: "min_section_avg_would_take_again",
+  min_open_seats: "min_available_seats",
+};
+
+/** Model-facing `free_{day}` field name -> the builder's day-name segment. */
+const FREE_DAY_MAP: Record<string, string> = {
+  free_monday: "monday",
+  free_tuesday: "tuesday",
+  free_wednesday: "wednesday",
+  free_thursday: "thursday",
+  free_friday: "friday",
 };
 
 type SearchCoursesArgs = Partial<{
@@ -147,6 +237,17 @@ type SearchCoursesArgs = Partial<{
   humanities: boolean;
   social_science: boolean;
   natural_science: boolean;
+  min_professor_rating: number;
+  max_professor_difficulty: number;
+  min_professor_ratings_count: number;
+  min_would_take_again_percent: number;
+  min_open_seats: number;
+  sort: string;
+  free_monday: string;
+  free_tuesday: string;
+  free_wednesday: string;
+  free_thursday: string;
+  free_friday: string;
   limit: number;
   page: number;
 }>;
@@ -175,6 +276,76 @@ function normalizePage(value: unknown): string | undefined {
   return String(Math.max(Math.trunc(n), MIN_LIMIT));
 }
 
+/** One local "HH:MM" clock time as minutes since local midnight, or null if malformed. */
+function parseClockMinutes(raw: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(raw.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+/**
+ * Six-hour CST->UTC offset, in minutes, matching the frontend's
+ * `cstToUtcMilliseconds` (`components/availability-calendar.tsx`) — the
+ * function that produces the millisecond values actually stored against
+ * sections, so this must match it exactly rather than being re-derived.
+ */
+const CST_TO_UTC_OFFSET_MINUTES = 6 * 60;
+const MINUTES_PER_DAY = 24 * 60;
+const MS_PER_MINUTE = 60000;
+
+/** Local minutes-since-midnight -> UTC milliseconds-since-midnight, wrapping past 24h. */
+function localMinutesToUtcMs(localMinutes: number): number {
+  return ((localMinutes + CST_TO_UTC_OFFSET_MINUTES) % MINUTES_PER_DAY) * MS_PER_MINUTE;
+}
+
+/**
+ * Converts one day's free-time value (e.g. `"13:00-17:00,18:00-20:00"`,
+ * local Madison time) into the comma-joined UTC-millisecond start/end
+ * strings `pg/builders/section-exists.ts` parses via `parseDayBlocks`.
+ *
+ * Local time is compared as raw minutes (before the +6h wrap) to decide
+ * whether a block is well-formed — "end after start" is a fact about the
+ * student's local day, not about the wrapped UTC representation, which the
+ * builder's own UTC-wrap branch (`section-exists.ts`'s "wrapping" comment)
+ * already expects to see start > end for legitimate evening blocks (e.g.
+ * 17:00-19:00 local wraps to a UTC end earlier than its UTC start). Once a
+ * block passes local validation, both endpoints are converted independently
+ * and emitted in whatever order that produces — the builder handles it.
+ *
+ * Returns null for any malformed block (bad format, out-of-range clock
+ * value, end at or before start locally, or an empty/garbage value) so the
+ * caller omits the day's params entirely rather than emitting a filter that
+ * silently misbehaves.
+ */
+function convertFreeBlocks(value: string): { starts: string; ends: string } | null {
+  const blocks = value
+    .split(",")
+    .map((block) => block.trim())
+    .filter((block) => block.length > 0);
+  if (blocks.length === 0) return null;
+
+  const startsMs: number[] = [];
+  const endsMs: number[] = [];
+
+  for (const block of blocks) {
+    const parts = block.split("-");
+    if (parts.length !== 2) return null;
+
+    const startLocal = parseClockMinutes(parts[0]);
+    const endLocal = parseClockMinutes(parts[1]);
+    if (startLocal === null || endLocal === null) return null;
+    if (endLocal <= startLocal) return null;
+
+    startsMs.push(localMinutesToUtcMs(startLocal));
+    endsMs.push(localMinutesToUtcMs(endLocal));
+  }
+
+  return { starts: startsMs.join(","), ends: endsMs.join(",") };
+}
+
 /**
  * Converts validated tool arguments (natural types, model-facing key
  * names) into the `Record<string, string>` shape `runCourseQuery` expects
@@ -193,6 +364,19 @@ export function normalizeToolArgs(args: SearchCoursesArgs): Record<string, strin
   for (const [key, value] of Object.entries(args)) {
     if (key === "limit" || key === "page") continue;
     if (value === undefined) continue;
+
+    const day = FREE_DAY_MAP[key];
+    if (day) {
+      const converted = convertFreeBlocks(String(value));
+      if (converted) {
+        out[`${day}StartTime`] = converted.starts;
+        out[`${day}EndTime`] = converted.ends;
+      }
+      // Malformed: omit both params for this day entirely, per spec — a
+      // dropped filter over-returns, a half-formed one returns nonsense.
+      continue;
+    }
+
     out[KEY_MAP[key] ?? key] = String(value);
   }
 
