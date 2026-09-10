@@ -111,3 +111,68 @@ describe("search_courses", () => {
     expect(out).not.toMatch(/"error"/);
   });
 });
+
+describe("free_* availability conversion", () => {
+  // These convert local Madison clock times into the UTC millisecond pairs
+  // pg/builders/section-exists.ts parses. The +6h offset is not a guess: it
+  // mirrors the frontend's cstToUtcMilliseconds, which produced the values
+  // actually stored against sections.
+  const HOUR = 3600000;
+
+  test("converts a single block to a UTC millisecond pair", () => {
+    const out = normalizeToolArgs({ free_monday: "09:00-11:00" });
+    // 09:00 local -> 540 + 360 = 900 min; 11:00 -> 660 + 360 = 1020 min
+    expect(out.mondayStartTime).toBe(String(15 * HOUR));
+    expect(out.mondayEndTime).toBe(String(17 * HOUR));
+    expect(out.free_monday).toBeUndefined();
+  });
+
+  test("keeps multiple blocks paired and in order", () => {
+    const out = normalizeToolArgs({ free_tuesday: "09:00-11:00,14:00-16:00" });
+    expect(out.tuesdayStartTime).toBe(`${15 * HOUR},${20 * HOUR}`);
+    expect(out.tuesdayEndTime).toBe(`${17 * HOUR},${22 * HOUR}`);
+  });
+
+  test("wraps an evening block past UTC midnight", () => {
+    // 19:00 local -> 1140 + 360 = 1500 -> wraps to 60 min. The builder has a
+    // branch for exactly this, where the UTC end lands before the UTC start.
+    const out = normalizeToolArgs({ free_wednesday: "19:00-21:00" });
+    expect(out.wednesdayStartTime).toBe(String(1 * HOUR));
+    expect(out.wednesdayEndTime).toBe(String(3 * HOUR));
+  });
+
+  test("drops a malformed day rather than emitting half a filter", () => {
+    // A dropped filter returns too many courses; a malformed one returns
+    // nonsense, which is worse because it looks like an answer.
+    for (const bad of ["", "morning", "9-11", "25:00-26:00", "11:00-09:00", "09:00"]) {
+      const out = normalizeToolArgs({ free_thursday: bad });
+      expect(out.thursdayStartTime).toBeUndefined();
+      expect(out.thursdayEndTime).toBeUndefined();
+    }
+  });
+
+  test("a valid day survives alongside a malformed one", () => {
+    const out = normalizeToolArgs({ free_monday: "09:00-11:00", free_friday: "nonsense" });
+    expect(out.mondayStartTime).toBe(String(15 * HOUR));
+    expect(out.fridayStartTime).toBeUndefined();
+  });
+});
+
+describe("the newly exposed section filters", () => {
+  test("maps model-facing names onto the builder's params", () => {
+    const out = normalizeToolArgs({
+      min_professor_rating: 4,
+      max_professor_difficulty: 3,
+      min_professor_ratings_count: 10,
+      min_would_take_again_percent: 80,
+      min_open_seats: 5,
+      sort: "cumulative_gpa",
+    });
+    expect(out.min_section_avg_rating).toBe("4");
+    expect(out.max_section_avg_difficulty).toBe("3");
+    expect(out.min_section_total_ratings).toBe("10");
+    expect(out.min_section_avg_would_take_again).toBe("80");
+    expect(out.min_available_seats).toBe("5");
+    expect(out.sort).toBe("cumulative_gpa");
+  });
+});

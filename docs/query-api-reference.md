@@ -102,9 +102,9 @@ These filter based on section-level RMP aggregates — each section's RMP score 
 
 Minimum section-level average RMP rating (e.g., `4.0`).
 
-### `min_section_avg_difficulty`
+### `max_section_avg_difficulty`
 
-Minimum section-level average difficulty (e.g., `3.0`).
+Maximum section-level average difficulty (e.g., `3.0`) — a ceiling, not a floor: keeps sections whose instructors average difficulty *at most* this value.
 
 ### `min_section_total_ratings`
 

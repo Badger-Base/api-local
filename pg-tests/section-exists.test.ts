@@ -36,6 +36,25 @@ describe("section EXISTS builder", () => {
     expect(result).toContain("uuid-cs302");     // CS302 sec 7: OPEN + Data Scientist (4.0)
   });
 
+  // max_section_avg_difficulty is a CEILING ("<="), unlike every other RMP
+  // predicate here which is a floor (">="). This test would fail if the
+  // comparison were still ">=": Bad Prof's 4.5 satisfies ">=3.0", so CS200
+  // would incorrectly qualify via its OPEN section.
+  it("max_section_avg_difficulty excludes the harder section, keeps the easier one", async () => {
+    const result = await queryWithSectionFilters({
+      status: "OPEN",
+      max_section_avg_difficulty: "3.0",
+    });
+    // CS200 sec 1: OPEN, but Bad Prof difficulty 4.5 > 3.0 → excluded.
+    expect(result).not.toContain("uuid-cs200");
+    // CS400 sec 3: OPEN, Good Prof difficulty 2.5 <= 3.0 → included.
+    expect(result).toContain("uuid-cs400");
+    // CS302 sec 7: OPEN, Data Scientist difficulty exactly 3.0 → included (boundary).
+    expect(result).toContain("uuid-cs302");
+    // MATH221 sec 5: OPEN, Online Instructor difficulty 2.0 <= 3.0 → included.
+    expect(result).toContain("uuid-math221");
+  });
+
   it("status filter single value", async () => {
     const result = await queryWithSectionFilters({ status: "OPEN" });
     expect(result).toContain("uuid-cs200");   // has OPEN section

@@ -8,7 +8,7 @@ interface SectionFilterParams {
   min_available_seats?: string;
   instruction_mode?: string;
   min_section_avg_rating?: string;
-  min_section_avg_difficulty?: string;
+  max_section_avg_difficulty?: string;
   min_section_total_ratings?: string;
   min_section_avg_would_take_again?: string;
   in_person_only?: string;
@@ -47,7 +47,7 @@ export function applySectionExists(
     p.min_available_seats ||
     p.instruction_mode ||
     p.min_section_avg_rating ||
-    p.min_section_avg_difficulty ||
+    p.max_section_avg_difficulty ||
     p.min_section_total_ratings ||
     p.min_section_avg_would_take_again ||
     p.in_person_only ||
@@ -124,7 +124,7 @@ function buildSectionSubquery(
   // predicates above.
   const needsRmp = !!(
     p.min_section_avg_rating ||
-    p.min_section_avg_difficulty ||
+    p.max_section_avg_difficulty ||
     p.min_section_total_ratings ||
     p.min_section_avg_would_take_again
   );
@@ -150,11 +150,14 @@ function buildSectionSubquery(
               parseFloat(p.min_section_avg_rating)
             );
           }
-          if (p.min_section_avg_difficulty) {
+          if (p.max_section_avg_difficulty) {
+            // Ceiling, not a floor: keep sections whose instructors average
+            // AT MOST this difficulty. Every other RMP predicate here is a
+            // floor (">=") — this is the one exception.
             rmpSub = rmpSub.having(
               sql`AVG(rmp_cleaned.avg_difficulty)`,
-              ">=",
-              parseFloat(p.min_section_avg_difficulty)
+              "<=",
+              parseFloat(p.max_section_avg_difficulty)
             );
           }
           if (p.min_section_total_ratings) {
